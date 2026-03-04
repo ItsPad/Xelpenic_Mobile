@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:xelpenic/screens/notificationscreen.dart';
 import 'login_screen.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -399,7 +400,9 @@ class _HomeScreenState extends State<HomeScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.mail_outline, color: Colors.brown),
-            onPressed: () {},
+            onPressed: () => {
+              Navigator.push(context, MaterialPageRoute(builder: (context) => const NotificationScreen()))
+            }
           ),
         ],
       ),

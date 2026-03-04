@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:xelpenic/screens/notificationscreen.dart';
 
 class NowShowingScreen extends StatefulWidget {
   const NowShowingScreen({super.key});
@@ -55,7 +56,9 @@ class _NowShowingScreenState extends State<NowShowingScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.mail_outline, color: Colors.brown),
-            onPressed: () => {},
+            onPressed: () => {
+              Navigator.push(context, MaterialPageRoute(builder: (context) => const NotificationScreen()))
+            }
           ),
         ],
       ),
