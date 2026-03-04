@@ -44,8 +44,7 @@ class _MainScreenState extends State<MainScreen> {
 
   // รายการหน้าจอตาม Tab
   final List<Widget> _screens = [
-    const NowShowingScreen(),
-    const Center(child: Text('NOW SHOWING')), // Index 0
+    const NowShowingScreen(), // Index 0
     const Center(child: Text('COINS')),       // Index 1
     const HomeScreen(),                       // Index 2 (HOME)
     const Center(child: Text('CINEMA')),      // Index 3
