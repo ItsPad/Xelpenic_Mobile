@@ -44,8 +44,7 @@ class _MainScreenState extends State<MainScreen> {
 
   // รายการหน้าจอตาม Tab
   final List<Widget> _screens = [
-    const NowShowingScreen(),
-    const Center(child: Text('NOW SHOWING')), // Index 0
+    const NowShowingScreen(), // Index 0
     const Center(child: Text('COINS')),       // Index 1
     const HomeScreen(),                       // Index 2 (HOME)
     const Center(child: Text('CINEMA')),      // Index 3
@@ -62,18 +61,8 @@ class _MainScreenState extends State<MainScreen> {
         backgroundColor: Colors.white,
         elevation: 2,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
-        child: Padding(
-          padding: const EdgeInsets.all(8.0), // ปรับตัวเลขเพื่อขยาย/ลดระยะห่างจากขอบปุ่ม
-          child: Image.network(
-            'https://media.discordapp.net/attachments/1475457011565985792/1476608848415428669/Xelpenic_Logo_2.png?ex=69a8fee7&is=69a7ad67&hm=2920f5eb8db5bbc31c6b6b1ebe0640782f9af7dd0a7a79728e9e093d5bd7df47&=&format=webp&quality=lossless&width=930&height=930', // <-- นำ URL โลโก้ X ของแพทมาใส่ในเครื่องหมายคำพูดนี้ได้เลยครับ
-            fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) => const Icon(
-              Icons.broken_image, 
-              color: Colors.brown,
-            ),
-          ),
-        ),
-      ), // เปลี่ยนเป็นโลโก้ X ได้ภายหลัง
+        child: const Icon(Icons.close, color: Colors.brown, size: 30), // เปลี่ยนเป็นโลโก้ X ได้ภายหลัง
+      ),
       floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
       bottomNavigationBar: BottomAppBar(
         shape: const CircularNotchedRectangle(),
