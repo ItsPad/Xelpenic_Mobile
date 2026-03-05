@@ -59,7 +59,6 @@ class _RegisterScreenState extends State<RegisterScreen> {
           // (ถ้าในตาราง customer มีคอลัมน์รับเบอร์โทรและวันเกิด แพทต้องเพิ่มเข้าไปตรงนี้ด้วยนะครับ)
           // เช่น 'customer_phone': _phoneController.text.trim(),
           // หรือ 'customer_birthday': birthDate,
-          'customer_rank_user': 'Bronze',
           'customer_points': 0,
           'customer_exp': 0,
         });
