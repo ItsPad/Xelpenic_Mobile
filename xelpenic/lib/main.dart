@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:xelpenic/screens/cinemascreen.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 // อย่าลืมเช็คชื่อไฟล์ import ให้ตรงกับของแพทนะครับ
 import 'screens/homescreen.dart';
 import 'screens/more_screen.dart';
@@ -101,10 +102,10 @@ class _MainScreenState extends State<MainScreen> {
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(15)),
         child: Padding(
           padding: const EdgeInsets.all(8.0),
-          child: Image.network(
-            'https://media.discordapp.net/attachments/1475457011565985792/1476608848415428669/Xelpenic_Logo_2.png?ex=69a8fee7&is=69a7ad67&hm=2920f5eb8db5bbc31c6b6b1ebe0640782f9af7dd0a7a79728e9e093d5bd7df47&=&format=webp&quality=lossless&width=930&height=930',
+          child: CachedNetworkImage(
+            imageUrl: 'https://i.ibb.co/LXwqk0bH/Xelpenic-Logo-2.png',
             fit: BoxFit.contain,
-            errorBuilder: (context, error, stackTrace) => const Icon(Icons.home, color: Colors.brown),
+            errorWidget: (context, url, error) => const Icon(Icons.home, color: Colors.brown),
           ),
         ),
       ),

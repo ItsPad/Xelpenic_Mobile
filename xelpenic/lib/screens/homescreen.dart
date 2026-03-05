@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:xelpenic/screens/notificationscreen.dart';
 import 'login_screen.dart';
+import 'movie_detail.dart';
+import 'package:cached_network_image/cached_network_image.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -112,7 +114,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final String name = _profileData?['customer_username'] ?? 'ไม่ทราบชื่อ';
     final int points = _profileData?['customer_points'] ?? 0;
     final int userExp = _profileData?['customer_exp'] ?? 0;
-    final String avatar = _profileData?['customer_avatar_url'] ?? 'https://uxwing.com/wp-content/themes/uxwing/download/peoples-avatars/man-user-circle-icon.png';
+    final String avatar = _profileData?['customer_avatar_url'] ?? 'https://i.ibb.co/1fBHkp1B/icon-7797704-640.png';
 
     // คำนวณ Rank แบบ Dynamic
     final currentRank = _calculateCurrentRank(userExp);
@@ -124,7 +126,7 @@ class _HomeScreenState extends State<HomeScreen> {
       width: double.infinity,
       decoration: const BoxDecoration(
         image: DecorationImage(
-          image: NetworkImage('https://media.discordapp.net/attachments/1475457011565985792/1478793043686461651/article_full3x.jpg?ex=69a9b0d8&is=69a85f58&hm=83cfdd582096daf729dd0ac5ab6fa901ef8970597a4b9e851b6baf86bed0ce4c&=&format=webp&width=1404&height=800'),
+          image: NetworkImage('https://i.ibb.co/B2ZvHFL3/article-full3x.jpg'),
           fit: BoxFit.cover,
           colorFilter: ColorFilter.mode(Colors.black45, BlendMode.darken),
         ),
@@ -186,39 +188,86 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // --- ส่วนแสดงผลหนังและไอเทม (โค้ดเดิมที่ปรับปรุง) ---
+  // --- ส่วนแสดงผลหนังและไอเทม---
   Widget _buildMovieList(Future<List<Map<String, dynamic>>> future) {
-    return SizedBox(
-      height: 280,
-      child: FutureBuilder<List<Map<String, dynamic>>>(
-        future: future,
-        builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) return const Center(child: CircularProgressIndicator());
-          final movies = snapshot.data ?? [];
-          if (movies.isEmpty) return const Center(child: Text('ไม่มีข้อมูล'));
-          return ListView.builder(
-            scrollDirection: Axis.horizontal,
-            itemCount: movies.length,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            itemBuilder: (context, index) {
-              final movie = movies[index];
-              return Container(
+  return SizedBox(
+    height: 280,
+    child: FutureBuilder<List<Map<String, dynamic>>>(
+      future: future,
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator(color: Colors.brown));
+        }
+        
+        final movies = snapshot.data ?? [];
+        if (movies.isEmpty) return const Center(child: Text('ไม่มีข้อมูล'));
+
+        return ListView.builder(
+          scrollDirection: Axis.horizontal,
+          itemCount: movies.length,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          itemBuilder: (context, index) {
+            final movie = movies[index];
+            
+            // เพิ่ม GestureDetector เพื่อให้กดเข้าไปหน้าย่อยได้ (เก็บคะแนนข้อ 2.1 และ 2.4) 
+            return GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => MovieDetailScreen(movie: movie),
+                  ),
+                );
+              },
+              child: Container(
                 width: 140,
                 margin: const EdgeInsets.only(right: 16),
                 child: Column(
                   children: [
-                    Expanded(child: ClipRRect(borderRadius: BorderRadius.circular(8), child: Image.network(movie['movie_post'] ?? '', fit: BoxFit.cover))),
-                    const SizedBox(height: 8),
-                    Text(movie['movie_title'] ?? '', maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                    // ใช้ CachedNetworkImage เพื่อแก้ปัญหาเฟรมตก (Skipped frames)
+                    Expanded(
+                      child: ClipRRect(
+                        borderRadius: BorderRadius.circular(12),
+                        child: CachedNetworkImage(
+                          imageUrl: movie['movie_post'] ?? '',
+                          fit: BoxFit.cover,
+                          placeholder: (context, url) => Container(
+                            color: Colors.grey.shade200,
+                            child: const Center(child: CircularProgressIndicator(strokeWidth: 2)),
+                          ),
+                          errorWidget: (context, url, error) => Container(
+                            color: Colors.grey.shade300,
+                            child: const Icon(Icons.broken_image, color: Colors.grey),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Text(
+                      movie['movie_title'] ?? 'ไม่ทราบชื่อ',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 13,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    // เพิ่มค่าย่อยๆ เช่น แนวหนัง หรือ วันฉาย เพื่อความสมบูรณ์ (ข้อ 2.3) 
+                    Text(
+                      movie['movie_genre'] ?? 'Action',
+                      style: const TextStyle(fontSize: 11, color: Colors.grey),
+                    ),
                   ],
                 ),
-              );
-            },
-          );
-        },
-      ),
-    );
-  }
+              ),
+            );
+          },
+        );
+      },
+    ),
+  );
+}
 
   @override
   Widget build(BuildContext context) {
