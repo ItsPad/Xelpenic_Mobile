@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:xelpenic/screens/cinemascreen.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:xelpenic/screens/coinscreen.dart';
 // อย่าลืมเช็คชื่อไฟล์ import ให้ตรงกับของแพทนะครับ
 import 'screens/homescreen.dart';
 import 'screens/more_screen.dart';
@@ -14,6 +15,9 @@ Future<void> main() async {
   await Supabase.initialize(
     url: 'https://dnaqqxfyjeuhvudynnze.supabase.co',
     anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImRuYXFxeGZ5amV1aHZ1ZHlubnplIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI2MDg0MTgsImV4cCI6MjA4ODE4NDQxOH0.5RO7vBY38b4IeN0o-gCqh2knNNa3lwZ_OfhTWmZIEec',
+    authOptions: const FlutterAuthClientOptions(
+      authFlowType: AuthFlowType.pkce, // มาตรฐานความปลอดภัย
+    ),
   );
 
   runApp(const XelpenicApp());
@@ -81,7 +85,7 @@ class _MainScreenState extends State<MainScreen> {
     // รายการหน้าจอ โดยใช้ IndexedStack เพื่อรักษา State ข้อมูล (แต้ม/ชื่อ) ไม่ให้หาย
     final List<Widget> _screens = [
       const NowShowingScreen(), 
-      const Center(child: Text('COINS')),      
+      const CoinScreen(),    
       const HomeScreen(),                       
       const CinemaScreen(),      
       MoreScreen(onLogout: onLogout), // ส่งฟังก์ชันไปให้หน้า More
