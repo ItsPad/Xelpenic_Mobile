@@ -307,12 +307,15 @@ class _HomeScreenState extends State<HomeScreen> {
               width: double.infinity,
               child: TextButton(
                 onPressed: () {
+                  // 💡 จุดที่อยู่ใน HomeScreen ตอนสั่งเปลี่ยนหน้า
                   Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (context) => ProfileScreen(
                         profileData: _profileData,
                         currentRank: currentRank,
+                        xelpassData:
+                            _xelpassData, // ส่งข้อมูลที่ดึงมาจาก table xelpass ไปด้วย
                       ),
                     ),
                   );
