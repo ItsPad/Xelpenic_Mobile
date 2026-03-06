@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart'; // สำหรับทำปุ่ม Copy
+import 'package:flutter/services.dart'; 
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class CoinScreen extends StatefulWidget {
@@ -14,50 +14,27 @@ class _CoinScreenState extends State<CoinScreen> {
   final _supabase = Supabase.instance.client;
   late Future<List<Map<String, dynamic>>> _itemsFuture;
 
-  // จำลองข้อมูลผู้ใช้
   int _currentCoins = 0;
   String _profileImageUrl = '';
   String _userName = '';
   bool _isLoadingProfile = true;
-  bool _isProcessing = false; // ป้องกันการกดปุ่มซ้ำรัวๆ
 
-  late final StreamSubscription<AuthState> _authStateSubscription;
+  final Color goldPrimary = const Color(0xFFDDAA55);
+  final Color darkSecondary = const Color(0xFF1A1A1A);
 
-  // จำลองแพ็กเกจเติมเงิน
   final List<Map<String, dynamic>> _topUpPackages = [
-    {'coins': 50, 'price': 50},
-    {'coins': 150, 'price': 150},
-    {'coins': 250, 'price': 250},
+    {'coins': 100, 'price': 100},
+    {'coins': 300, 'price': 300},
     {'coins': 500, 'price': 500},
-    {'coins': 750, 'price': 750},
     {'coins': 1000, 'price': 1000},
-    {'coins': 1500, 'price': 1500},
     {'coins': 2000, 'price': 2000},
+    {'coins': 5000, 'price': 5000},
   ];
 
-  // 💡 แพ็กเกจ XELPASS (ต้องตั้งค่า id ให้ตรงกับ items_id ใน Database ด้วยนะครับ)
   final List<Map<String, dynamic>> _xelpassPackages = [
-    {
-      'id': 991,
-      'name': 'Student Pass',
-      'cost': 1500,
-      'desc':
-          'สิทธิพิเศษดูหนังฟรี 1 ครั้ง/เรื่อง (ที่นั่ง Normal) พร้อมรับส่วนลดขนม 10%',
-    },
-    {
-      'id': 992,
-      'name': 'Standard Pass',
-      'cost': 2500,
-      'desc':
-          'สิทธิพิเศษดูหนังฟรี 1 ครั้ง/เรื่อง (ที่นั่ง Normal) และส่วนลดป๊อปคอร์น 20%',
-    },
-    {
-      'id': 993,
-      'name': 'Premium Pass',
-      'cost': 4000,
-      'desc':
-          'ดูหนังฟรีไม่จำกัดเรื่อง (สิทธิ์ 1 ครั้ง/เรื่อง) อัปเกรดที่นั่ง Honeymoon ฟรี',
-    },
+    {'id': 991, 'name': 'Student Pass', 'cost': 1500, 'price_thb': 199, 'desc': 'ดูฟรี 1 ครั้ง/เรื่อง พร้อมส่วนลดขนม 10%'},
+    {'id': 992, 'name': 'Standard Pass', 'cost': 2500, 'price_thb': 299, 'desc': 'ดูฟรี 1 ครั้ง/เรื่อง และส่วนลดป๊อปคอร์น 20%'},
+    {'id': 993, 'name': 'Premium Pass', 'cost': 4000, 'price_thb': 499, 'desc': 'ดูฟรีไม่จำกัดเรื่อง อัปเกรดที่นั่ง Honeymoon ฟรี'},
   ];
 
   @override
@@ -65,542 +42,262 @@ class _CoinScreenState extends State<CoinScreen> {
     super.initState();
     _fetchItems();
     _fetchUserProfile();
-
-    _authStateSubscription = _supabase.auth.onAuthStateChange.listen((data) {
-      if (mounted) _fetchUserProfile();
-    });
-  }
-
-  @override
-  void dispose() {
-    _authStateSubscription.cancel();
-    super.dispose();
   }
 
   void _fetchItems() {
-    // 💡 สมมติว่าของรางวัลทั่วไปมี items_id น้อยกว่า 900
     _itemsFuture = _supabase.from('items').select().lt('items_id', 900);
   }
 
   Future<void> _fetchUserProfile() async {
-    setState(() {
-      _isLoadingProfile = true;
-    });
-
     try {
       final user = _supabase.auth.currentUser;
-
       if (user != null) {
-        final response = await _supabase
-            .from('profiles')
-            .select('customer_points, customer_avatar_url, customer_username')
-            .eq('customer_ID', user.id)
-            .single();
-
-        setState(() {
-          _currentCoins = response['customer_points'] ?? 0;
-          _profileImageUrl =
-              response['customer_avatar_url'] ??
-              'https://i.pravatar.cc/150?img=47';
-          _userName = response['customer_username'] ?? 'John Doe';
-          _isLoadingProfile = false;
-        });
-      } else {
-        setState(() {
-          _currentCoins = 0;
-          _profileImageUrl = 'https://i.pravatar.cc/150?img=47';
-          _userName = 'John Doe';
-          _isLoadingProfile = false;
-        });
+        final data = await _supabase.from('profiles').select().eq('customer_ID', user.id).single();
+        if (mounted) {
+          setState(() {
+            _currentCoins = data['customer_points'] ?? 0;
+            _profileImageUrl = data['customer_avatar_url'] ?? '';
+            _userName = data['customer_username'] ?? 'User';
+            _isLoadingProfile = false;
+          });
+        }
       }
     } catch (e) {
-      print('==== ❌ Error Fetching Profile ====');
-      print(e);
-      setState(() {
-        _isLoadingProfile = false;
-      });
+      if (mounted) setState(() => _isLoadingProfile = false);
     }
   }
 
-  Future<void> _processTopUp(int coinsToAdd) async {
-    try {
-      final user = _supabase.auth.currentUser;
-      final newTotalCoins = _currentCoins + coinsToAdd;
-
-      if (user != null) {
-        await _supabase
-            .from('profiles')
-            .update({'customer_points': newTotalCoins})
-            .eq('customer_ID', user.id);
-      }
-
-      setState(() {
-        _currentCoins = newTotalCoins;
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('เติมเงินสำเร็จ! ได้รับ $coinsToAdd Coins'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('เกิดข้อผิดพลาดในการเติมเงิน'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  // 💡 ฟังก์ชันหลักสำหรับการแลกของรางวัลและ XELPASS
-  Future<void> _processRedeem(int cost, int itemsId, String itemName) async {
-    if (_isProcessing) return;
-
-    setState(() => _isProcessing = true);
-
-    // โชว์ Loading หน้าจอ
-    showDialog(
-      context: context,
-      barrierDismissible: false,
-      builder: (_) => const Center(
-        child: CircularProgressIndicator(color: Color(0xFFDDAA55)),
-      ),
-    );
-
+  Future<bool> _updateCoinsDB(int amount, bool isAddition) async {
     try {
       final userId = _supabase.auth.currentUser?.id;
-      if (userId == null) throw Exception("กรุณาเข้าสู่ระบบ");
-
-      final newTotalCoins = _currentCoins - cost;
-
-      // 1. หักเหรียญลงตาราง profiles
-      await _supabase
-          .from('profiles')
-          .update({'customer_points': newTotalCoins})
-          .eq('customer_ID', userId);
-
-      // 2. บันทึกประวัติและสร้างโค้ดลง change_log
-      final logResult = await _supabase
-          .from('change_log')
-          .insert({
-            'chl_user_id': userId,
-            'chl_items_id': itemsId,
-            'chl_redeem': false, // สถานะยังไม่ใช้งาน
-          })
-          .select()
-          .single();
-
-      setState(() => _currentCoins = newTotalCoins);
-
-      if (mounted) Navigator.pop(context); // ปิด Loading
-
-      // 3. โชว์หน้าต่างรหัสโค้ด
-      _showCodeDialog(itemName, logResult['chl_items_code'].toString());
-    } catch (e) {
-      if (mounted) Navigator.pop(context);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Error: $e'), backgroundColor: Colors.red),
-      );
-    } finally {
-      setState(() => _isProcessing = false);
-    }
+      if (userId == null) return false;
+      final newTotal = isAddition ? _currentCoins + amount : _currentCoins - amount;
+      await _supabase.from('profiles').update({'customer_points': newTotal}).eq('customer_ID', userId);
+      if (mounted) setState(() => _currentCoins = newTotal);
+      return true;
+    } catch (e) { return false; }
   }
 
-  // 💡 Dialog โชว์โค้ดที่สร้างสำเร็จ
-  void _showCodeDialog(String itemName, String code) {
+  Future<String?> _createRedeemCode(int itemsId) async {
+    try {
+      final userId = _supabase.auth.currentUser?.id;
+      if (userId == null) return null;
+      final res = await _supabase.from('change_log').insert({'chl_user_id': userId, 'chl_items_id': itemsId, 'chl_redeem': false}).select().single();
+      return res['chl_items_code'].toString();
+    } catch (e) { return null; }
+  }
+
+  void _showResult(String title, String code) {
     showDialog(
       context: context,
-      barrierDismissible: false,
       builder: (context) => AlertDialog(
         backgroundColor: Colors.white,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        title: const Icon(
-          Icons.check_circle_outline,
-          color: Colors.green,
-          size: 60,
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Text(
-              'แลก $itemName สำเร็จ!',
-              style: const TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.brown,
-              ),
-              textAlign: TextAlign.center,
-            ),
+            const Icon(Icons.stars_rounded, color: Color(0xFFDDAA55), size: 80),
             const SizedBox(height: 16),
-            const Text(
-              'รหัส Redeem ของคุณคือ:',
-              style: TextStyle(color: Colors.grey, fontSize: 12),
-            ),
+            Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 20)),
             const SizedBox(height: 8),
+            const Text("ได้รับรหัสสำหรับการใช้งานแล้ว", style: TextStyle(color: Colors.grey)),
+            const SizedBox(height: 24),
             Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(8),
-              ),
-              child: SelectableText(
-                code,
-                style: const TextStyle(
-                  color: Colors.black,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 14,
-                  letterSpacing: 1.5,
-                ),
-                textAlign: TextAlign.center,
-              ),
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(16), border: Border.all(color: Colors.grey.shade200)),
+              child: SelectableText(code, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 16, letterSpacing: 1, color: Colors.brown)),
             ),
-            const SizedBox(height: 16),
-            const Text(
-              'คัดลอกรหัสนี้ไปกรอกในหน้า Redeem Code\nเพื่อรับสิทธิ์ได้ทันที',
-              style: TextStyle(color: Colors.grey, fontSize: 10, height: 1.5),
-              textAlign: TextAlign.center,
+            const SizedBox(height: 24),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.black, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), padding: const EdgeInsets.symmetric(vertical: 16)),
+                onPressed: () => Navigator.pop(context),
+                child: const Text("ตกลง", style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+              ),
             ),
           ],
         ),
-        actions: [
-          TextButton(
-            onPressed: () {
-              Clipboard.setData(ClipboardData(text: code));
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('คัดลอกรหัสแล้ว'),
-                  backgroundColor: Colors.green,
-                ),
-              );
-            },
-            child: const Text(
-              'คัดลอกรหัส',
-              style: TextStyle(color: Colors.brown),
-            ),
-          ),
-          ElevatedButton(
-            onPressed: () => Navigator.pop(context),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: const Color(0xFFDDAA55),
-            ),
-            child: const Text(
-              'ปิด',
-              style: TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          ),
-        ],
       ),
+    );
+  }
+
+  // --- เติมเงินแบบใหม่ สวยกว่าเดิม ---
+  void _showTopUpSheet() {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        bool isProcessing = false;
+        return StatefulBuilder(builder: (context, setSheetState) {
+          return Container(
+            padding: const EdgeInsets.all(32),
+            decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade300, borderRadius: BorderRadius.circular(2))),
+                const SizedBox(height: 24),
+                const Text("Top Up Coins", style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.black)),
+                const SizedBox(height: 24),
+                if (isProcessing)
+                  const Padding(padding: EdgeInsets.all(40), child: CircularProgressIndicator(color: Colors.brown))
+                else
+                  GridView.count(
+                    crossAxisCount: 3,
+                    shrinkWrap: true,
+                    mainAxisSpacing: 12,
+                    crossAxisSpacing: 12,
+                    childAspectRatio: 1.1,
+                    children: _topUpPackages.map((pkg) => InkWell(
+                      onTap: () async {
+                        setSheetState(() => isProcessing = true);
+                        final ok = await _updateCoinsDB(pkg['coins'], true);
+                        if (mounted) { Navigator.pop(ctx); if (ok) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("เติมเงินสำเร็จ +${pkg['coins']} Coins"), backgroundColor: Colors.green)); }
+                      },
+                      child: Container(
+                        decoration: BoxDecoration(border: Border.all(color: Colors.grey.shade200), borderRadius: BorderRadius.circular(16)),
+                        child: Column(mainAxisAlignment: MainAxisAlignment.center, children: [
+                          Icon(Icons.monetization_on, color: goldPrimary, size: 20),
+                          Text("${pkg['coins']}", style: const TextStyle(fontWeight: FontWeight.bold)),
+                          Text("฿${pkg['price']}", style: const TextStyle(fontSize: 10, color: Colors.grey)),
+                        ]),
+                      ),
+                    )).toList(),
+                  ),
+                const SizedBox(height: 24),
+              ],
+            ),
+          );
+        });
+      },
     );
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: const Color(0xFFF8F5F1),
-      appBar: AppBar(
-        backgroundColor: Colors.white,
-        elevation: 0,
-        scrolledUnderElevation: 0,
-        surfaceTintColor: Colors.transparent,
-        title: const Text(
-          'COINS',
-          style: TextStyle(
-            color: Colors.brown,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 2,
-          ),
-        ),
-        actions: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0),
-            child: Row(
-              children: [
-                const Icon(
-                  Icons.monetization_on,
-                  color: Color(0xFFD4AF37),
-                  size: 20,
+      backgroundColor: const Color(0xFFFDFDFD),
+      body: CustomScrollView(
+        slivers: [
+          // Custom App Bar
+          SliverAppBar(
+            expandedHeight: 220,
+            floating: false,
+            pinned: true,
+            backgroundColor: darkSecondary,
+            elevation: 0,
+            flexibleSpace: FlexibleSpaceBar(
+              background: Container(
+                decoration: BoxDecoration(
+                  gradient: LinearGradient(
+                    colors: [darkSecondary, const Color(0xFF333333)],
+                    begin: Alignment.topCenter,
+                    end: Alignment.bottomCenter,
+                  ),
                 ),
-                const SizedBox(width: 4),
-                _isLoadingProfile
-                    ? const SizedBox(
-                        width: 16,
-                        height: 16,
-                        child: CircularProgressIndicator(
-                          strokeWidth: 2,
-                          color: Colors.brown,
+                child: Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const SizedBox(height: 40),
+                      Text("YOUR BALANCE", style: TextStyle(color: goldPrimary.withOpacity(0.8), fontSize: 12, letterSpacing: 2, fontWeight: FontWeight.bold)),
+                      const SizedBox(height: 8),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.monetization_on, color: goldPrimary, size: 36),
+                          const SizedBox(width: 12),
+                          Text("$_currentCoins", style: const TextStyle(color: Colors.white, fontSize: 48, fontWeight: FontWeight.w900)),
+                        ],
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton.icon(
+                        onPressed: _showTopUpSheet,
+                        icon: const Icon(Icons.add_rounded, size: 18),
+                        label: const Text("TOP UP COINS", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: goldPrimary,
+                          foregroundColor: Colors.black,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                          padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                          elevation: 0,
                         ),
                       )
-                    : Text(
-                        '$_currentCoins',
-                        style: const TextStyle(
-                          color: Colors.black87,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 16,
-                        ),
-                      ),
-                const SizedBox(width: 12),
-                CircleAvatar(
-                  radius: 16,
-                  backgroundImage: _profileImageUrl.isNotEmpty
-                      ? NetworkImage(_profileImageUrl)
-                      : null,
-                  backgroundColor: Colors.grey.shade300,
-                  child: _profileImageUrl.isEmpty
-                      ? const Icon(Icons.person, color: Colors.white)
-                      : null,
-                ),
-                const SizedBox(width: 4),
-                Text(
-                  _userName,
-                  style: const TextStyle(fontWeight: FontWeight.bold),
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-      // 💡 เปลี่ยนมาใช้ CustomScrollView เพื่อให้เลื่อนได้ทั้งหมดไม่ติดขัด
-      body: RefreshIndicator(
-        color: Colors.brown,
-        onRefresh: () async {
-          await _fetchUserProfile();
-          setState(() => _fetchItems());
-        },
-        child: CustomScrollView(
-          physics: const AlwaysScrollableScrollPhysics(),
-          slivers: [
-            SliverToBoxAdapter(child: _buildTopUpBanner()),
-            SliverToBoxAdapter(
-              child: Container(
-                decoration: const BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-                ),
-                padding: const EdgeInsets.only(top: 24, left: 16, right: 16),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // 💡 ส่วน XELPASS Packages ด้านบน
-                    const Text(
-                      'อัปเกรด XELPASS',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.brown,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildXelpassSection(),
-
-                    const Padding(
-                      padding: EdgeInsets.symmetric(vertical: 24),
-                      child: Divider(color: Colors.black12),
-                    ),
-
-                    // 💡 ส่วนแลกของรางวัลทั่วไปด้านล่าง
-                    const Text(
-                      'แลกของรางวัลทั่วไป',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.brown,
-                      ),
-                    ),
-                    const SizedBox(height: 16),
-                    _buildItemsGrid(),
-                    const SizedBox(height: 40), // เผื่อที่ว่างด้านล่าง
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildTopUpBanner() {
-    return Container(
-      margin: const EdgeInsets.all(16),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFFD4C1A0), Color(0xFFBCA67F)],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'ยอดเหรียญคงเหลือ',
-                style: TextStyle(color: Colors.white70, fontSize: 14),
-              ),
-              const SizedBox(height: 4),
-              Row(
-                children: [
-                  const Icon(
-                    Icons.monetization_on,
-                    color: Colors.white,
-                    size: 28,
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  _isLoadingProfile
-                      ? const CircularProgressIndicator(color: Colors.white)
-                      : Text(
-                          '$_currentCoins',
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
+                ),
+              ),
+            ),
+          ),
+
+          SliverToBoxAdapter(
+            child: Container(
+              padding: const EdgeInsets.symmetric(vertical: 32),
+              decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSectionTitle("XELPASS MEMBERSHIP"),
+                  const SizedBox(height: 16),
+                  _buildXelpassList(),
+                  const Padding(padding: EdgeInsets.symmetric(horizontal: 24, vertical: 32), child: Divider(height: 1, thickness: 1)),
+                  _buildSectionTitle("EXCLUSIVE REWARDS"),
+                  const SizedBox(height: 16),
+                  _buildRewardsGrid(),
                 ],
               ),
-            ],
-          ),
-          ElevatedButton(
-            onPressed: _showTopUpModal,
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.white,
-              foregroundColor: Colors.brown,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(20),
-              ),
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
-            child: const Text(
-              'เติมเงิน',
-              style: TextStyle(fontWeight: FontWeight.bold),
-            ),
-          ),
+          )
         ],
       ),
     );
   }
 
-  // 💡 Widget สำหรับแสดงแถวแนวนอน Xelpass
-  Widget _buildXelpassSection() {
-    return SizedBox(
-      height: 160,
-      child: ListView.builder(
-        scrollDirection: Axis.horizontal,
-        physics: const BouncingScrollPhysics(),
-        itemCount: _xelpassPackages.length,
-        itemBuilder: (context, index) {
-          final pass = _xelpassPackages[index];
-          final bool canAfford = _currentCoins >= (pass['cost'] as int);
+  Widget _buildSectionTitle(String title) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 24),
+      child: Text(title, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w900, color: Colors.black, letterSpacing: 1.2)),
+    );
+  }
 
-          return Container(
-            width: 220,
-            margin: const EdgeInsets.only(right: 16, bottom: 8),
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: const Color(0xFF141414), // สีดำพรีเมียม
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: canAfford ? const Color(0xFFDDAA55) : Colors.white24,
-                width: 1.5,
+  Widget _buildXelpassList() {
+    return SizedBox(
+      height: 180,
+      child: ListView.builder(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        scrollDirection: Axis.horizontal,
+        itemCount: _xelpassPackages.length,
+        itemBuilder: (context, i) {
+          final p = _xelpassPackages[i];
+          return GestureDetector(
+            onTap: () => _showXelpassSheet(p),
+            child: Container(
+              width: 260,
+              margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              padding: const EdgeInsets.all(24),
+              decoration: BoxDecoration(
+                color: darkSecondary,
+                borderRadius: BorderRadius.circular(24),
+                boxShadow: [BoxShadow(color: goldPrimary.withOpacity(0.2), blurRadius: 12, offset: const Offset(0, 6))],
               ),
-              boxShadow: [
-                BoxShadow(
-                  color: const Color(0xFFDDAA55).withOpacity(0.1),
-                  blurRadius: 6,
-                  offset: const Offset(0, 3),
-                ),
-              ],
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Icon(
-                      Icons.workspace_premium,
-                      color: canAfford
-                          ? const Color(0xFFDDAA55)
-                          : Colors.white38,
-                      size: 16,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      pass['name'],
-                      style: TextStyle(
-                        color: canAfford ? Colors.white : Colors.white60,
-                        fontSize: 15,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 6),
-                Text(
-                  '${pass['cost']} Coins',
-                  style: TextStyle(
-                    color: canAfford ? const Color(0xFFDDAA55) : Colors.white38,
-                    fontSize: 14,
-                    fontWeight: FontWeight.w800,
-                  ),
-                ),
-                if (!canAfford)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      'ต้องการอีก ${(pass['cost'] as int) - _currentCoins} Coins',
-                      style: const TextStyle(
-                        color: Colors.redAccent,
-                        fontSize: 10,
-                      ),
-                    ),
-                  ),
-                const Spacer(),
-                SizedBox(
-                  width: double.infinity,
-                  height: 35,
-                  child: ElevatedButton(
-                    // กดแล้วจะเด้ง Bottom Sheet ขึ้นมาโชว์รายละเอียด
-                    onPressed: () => _showXelpassDetailSheet(pass),
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: canAfford
-                          ? const Color(0xFFDDAA55)
-                          : Colors.white24,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
-                      ),
-                    ),
-                    child: Text(
-                      'ดูรายละเอียด',
-                      style: TextStyle(
-                        color: canAfford ? Colors.black : Colors.white60,
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                      ),
-                    ),
-                  ),
-                ),
-              ],
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(mainAxisAlignment: MainAxisAlignment.spaceBetween, children: [
+                    const Icon(Icons.workspace_premium, color: Color(0xFFDDAA55), size: 28),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(color: goldPrimary.withOpacity(0.1), borderRadius: BorderRadius.circular(12)),
+                      child: Text("${p['cost']} Coins", style: TextStyle(color: goldPrimary, fontSize: 12, fontWeight: FontWeight.bold)),
+                    )
+                  ]),
+                  const Spacer(),
+                  Text(p['name'], style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w900, fontSize: 18)),
+                  const SizedBox(height: 4),
+                  Text(p['desc'], style: TextStyle(color: Colors.white.withOpacity(0.5), fontSize: 11), maxLines: 2, overflow: TextOverflow.ellipsis),
+                ],
+              ),
             ),
           );
         },
@@ -608,523 +305,162 @@ class _CoinScreenState extends State<CoinScreen> {
     );
   }
 
-  // 💡 หน้าต่าง Bottom Sheet ของ XELPASS
-  void _showXelpassDetailSheet(Map<String, dynamic> pass) {
-    final cost = pass['cost'] as int;
-    final bool canAfford = _currentCoins >= cost;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (context) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: Color(0xFF141414), // ธีมดำพรีเมียม
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade800,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Center(
-                child: Container(
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    color: const Color(0xFFDDAA55).withOpacity(0.1),
-                    border: Border.all(
-                      color: const Color(0xFFDDAA55),
-                      width: 2,
-                    ),
-                  ),
-                  child: const Icon(
-                    Icons.workspace_premium,
-                    color: Color(0xFFDDAA55),
-                    size: 60,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Center(
-                child: Text(
-                  pass['name'],
-                  style: const TextStyle(
-                    fontSize: 24,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
-                ),
-              ),
-              const SizedBox(height: 8),
-              Center(
-                child: Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    const Icon(
-                      Icons.monetization_on,
-                      color: Color(0xFFDDAA55),
-                      size: 20,
-                    ),
-                    const SizedBox(width: 6),
-                    Text(
-                      '$cost Coins',
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFFDDAA55),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'รายละเอียดแพ็กเกจ:',
-                style: TextStyle(
-                  color: Colors.grey.shade400,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                pass['desc'] ?? '',
-                style: const TextStyle(
-                  color: Colors.white70,
-                  height: 1.6,
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 30),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: canAfford
-                      ? () {
-                          Navigator.pop(context);
-                          _processRedeem(
-                            cost,
-                            pass['id'],
-                            pass['name'],
-                          ); // เรียกฟังก์ชันหักเหรียญ
-                        }
-                      : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFFDDAA55),
-                    disabledBackgroundColor: Colors.white12,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(
-                    canAfford ? 'แลกรับสิทธิ์ XELPASS' : 'Coins ไม่เพียงพอ',
-                    style: TextStyle(
-                      color: canAfford ? Colors.black : Colors.white38,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-            ],
-          ),
-        );
-      },
-    );
-  }
-
-  // --- Grid แสดงรายการของที่ใช้เหรียญแลกได้ ---
-  Widget _buildItemsGrid() {
+  Widget _buildRewardsGrid() {
     return FutureBuilder<List<Map<String, dynamic>>>(
       future: _itemsFuture,
       builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting)
-          return const Center(child: CircularProgressIndicator());
-        if (snapshot.hasError)
-          return const Center(child: Text('เกิดข้อผิดพลาดในการโหลดข้อมูล'));
-
-        final items = snapshot.data ?? [];
-        if (items.isEmpty)
-          return const Center(child: Text('ไม่มีของรางวัลในขณะนี้'));
-
+        if (!snapshot.hasData) return const Center(child: CircularProgressIndicator());
+        final items = snapshot.data!;
         return GridView.builder(
-          physics:
-              const NeverScrollableScrollPhysics(), // ปิด scroll ตัวมันเอง ให้เลื่อนไปกับจอใหญ่
+          padding: const EdgeInsets.symmetric(horizontal: 24),
           shrinkWrap: true,
-          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: 2,
-            childAspectRatio: 0.75,
-            crossAxisSpacing: 16,
-            mainAxisSpacing: 16,
-          ),
+          physics: const NeverScrollableScrollPhysics(),
+          gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(crossAxisCount: 2, mainAxisSpacing: 20, crossAxisSpacing: 20, childAspectRatio: 0.75),
           itemCount: items.length,
-          itemBuilder: (context, index) {
-            final item = items[index];
-            return _buildItemCard(item);
+          itemBuilder: (context, i) {
+            final item = items[i];
+            return GestureDetector(
+              onTap: () => _showItemSheet(item),
+              child: Container(
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(color: Colors.grey.shade100),
+                  boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.02), blurRadius: 10, offset: const Offset(0, 4))],
+                ),
+                child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                  Expanded(
+                    child: ClipRRect(
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+                      child: Image.network(item['items_url'] ?? '', fit: BoxFit.cover, width: double.infinity),
+                    ),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.all(12),
+                    child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+                      Text(item['items_name'], maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13)),
+                      const SizedBox(height: 4),
+                      Row(children: [
+                        Icon(Icons.monetization_on, color: goldPrimary, size: 14),
+                        const SizedBox(width: 4),
+                        Text("${item['items_cost']}", style: TextStyle(color: goldPrimary, fontWeight: FontWeight.w900, fontSize: 12)),
+                      ]),
+                    ]),
+                  )
+                ]),
+              ),
+            );
           },
         );
       },
     );
   }
 
-  Widget _buildItemCard(Map<String, dynamic> item) {
-    final int cost = item['items_cost'] as int? ?? 0;
-    final bool canAfford = _currentCoins >= cost;
-
-    return GestureDetector(
-      // 💡 กดแล้วเด้ง Bottom Sheet ของรางวัลทั่วไป
-      onTap: () => _showItemDetailSheet(item),
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border.all(
-            color: canAfford
-                ? const Color(0xFFDDAA55).withOpacity(0.5)
-                : Colors.grey.shade200,
-          ),
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.05),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(
-              child: ClipRRect(
-                borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(12),
-                ),
-                child: Image.network(
-                  item['items_url'] ?? '',
-                  fit: BoxFit.cover,
-                  errorBuilder: (context, error, stackTrace) => Container(
-                    color: Colors.grey.shade100,
-                    child: const Icon(
-                      Icons.image,
-                      color: Colors.grey,
-                      size: 40,
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    item['items_name'] ?? 'ไม่มีชื่อ',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Row(
-                    children: [
-                      Icon(
-                        Icons.monetization_on,
-                        color: canAfford
-                            ? const Color(0xFFD4AF37)
-                            : Colors.grey,
-                        size: 14,
-                      ),
-                      const SizedBox(width: 4),
-                      Text(
-                        '$cost',
-                        style: TextStyle(
-                          color: canAfford ? Colors.brown : Colors.grey,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // 💡 หน้าต่าง Bottom Sheet ของรางวัลทั่วไป
-  void _showItemDetailSheet(Map<String, dynamic> item) {
-    final int cost = item['items_cost'] as int? ?? 0;
-    final bool canAfford = _currentCoins >= cost;
-    final String imageUrl = item['items_url'] ?? '';
-
+  // --- ฟังก์ชันแลกสิทธิ์ที่ปรับ UI ใหม่ ---
+  void _showXelpassSheet(Map<String, dynamic> pass) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) {
-        return Container(
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Center(
-                child: Container(
-                  width: 40,
-                  height: 5,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade300,
-                    borderRadius: BorderRadius.circular(10),
+      builder: (ctx) {
+        bool isBusy = false;
+        return StatefulBuilder(builder: (context, setSheetState) {
+          return Container(
+            padding: const EdgeInsets.all(32),
+            decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const Icon(Icons.workspace_premium, color: Color(0xFFDDAA55), size: 64),
+                const SizedBox(height: 16),
+                Text(pass['name'], style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                Text(pass['desc'], textAlign: TextAlign.center, style: const TextStyle(color: Colors.grey)),
+                const SizedBox(height: 32),
+                if (isBusy) const CircularProgressIndicator(color: Colors.brown) else Column(children: [
+                  _buildRedeemButton(
+                    "REDEEM WITH ${pass['cost']} COINS",
+                    const Color(0xFFDDAA55),
+                    Colors.black,
+                    _currentCoins >= pass['cost'] ? () async {
+                      setSheetState(() => isBusy = true);
+                      await _updateCoinsDB(pass['cost'], false);
+                      final code = await _createRedeemCode(pass['id']);
+                      if (mounted) { Navigator.pop(ctx); if (code != null) _showResult(pass['name'], code); }
+                    } : null
                   ),
-                ),
-              ),
-              const SizedBox(height: 24),
-              Center(
-                child: ClipRRect(
-                  borderRadius: BorderRadius.circular(16),
-                  child: imageUrl.isNotEmpty
-                      ? Image.network(
-                          imageUrl,
-                          height: 200,
-                          width: double.infinity,
-                          fit: BoxFit.cover,
-                          errorBuilder: (_, __, ___) => Container(
-                            height: 200,
-                            color: Colors.grey.shade100,
-                            child: const Icon(
-                              Icons.image,
-                              size: 60,
-                              color: Colors.grey,
-                            ),
-                          ),
-                        )
-                      : Container(
-                          height: 200,
-                          width: double.infinity,
-                          color: const Color(0xFFF0E8D8),
-                          child: const Icon(
-                            Icons.card_giftcard,
-                            size: 60,
-                            color: Color(0xFFDDAA55),
-                          ),
-                        ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              Text(
-                item['items_name'] ?? 'ไม่มีชื่อ',
-                style: const TextStyle(
-                  fontSize: 22,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black87,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                children: [
-                  const Icon(
-                    Icons.monetization_on,
-                    color: Color(0xFFDDAA55),
-                    size: 24,
+                  const SizedBox(height: 12),
+                  _buildRedeemButton(
+                    "BUY WITH CASH ฿${pass['price_thb']}",
+                    Colors.black,
+                    Colors.white,
+                    () async {
+                      setSheetState(() => isBusy = true);
+                      final code = await _createRedeemCode(pass['id']);
+                      if (mounted) { Navigator.pop(ctx); if (code != null) _showResult(pass['name'], code); }
+                    }
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    '$cost Coins',
-                    style: const TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Color(0xFFDDAA55),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 20),
-              Text(
-                'รายละเอียดของรางวัล:',
-                style: TextStyle(
-                  color: Colors.grey.shade600,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                (item['items_des'] != null &&
-                        item['items_des'].toString().isNotEmpty)
-                    ? item['items_des']
-                    : 'นำรหัสที่ได้ไปแสดงเพื่อรับสิทธิ์ที่หน้าเคาน์เตอร์ XELPENIC',
-                style: const TextStyle(
-                  color: Colors.black54,
-                  height: 1.5,
-                  fontSize: 14,
-                ),
-              ),
-              const SizedBox(height: 30),
-              SizedBox(
-                width: double.infinity,
-                height: 50,
-                child: ElevatedButton(
-                  onPressed: canAfford
-                      ? () {
-                          Navigator.pop(context);
-                          _processRedeem(
-                            cost,
-                            item['items_id'],
-                            item['items_name'] ?? 'ของรางวัล',
-                          );
-                        }
-                      : null,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.brown,
-                    disabledBackgroundColor: Colors.grey.shade300,
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  child: Text(
-                    canAfford ? 'แลกของรางวัล' : 'Coins ไม่เพียงพอ',
-                    style: TextStyle(
-                      color: canAfford ? Colors.white : Colors.grey.shade500,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                    ),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 10),
-            ],
-          ),
-        );
+                ]),
+                const SizedBox(height: 16),
+              ],
+            ),
+          );
+        });
       },
     );
   }
 
-  // --- หน้าต่าง (Bottom Sheet) สำหรับเลือกแพ็กเกจเติมเงิน ---
-  void _showTopUpModal() {
+  void _showItemSheet(Map<String, dynamic> item) {
     showModalBottomSheet(
       context: context,
-      isScrollControlled: true,
       backgroundColor: Colors.transparent,
-      builder: (context) {
-        return Container(
-          height: MediaQuery.of(context).size.height * 0.7,
-          decoration: const BoxDecoration(
-            color: Colors.white,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-          ),
-          child: Column(
-            children: [
-              const SizedBox(height: 12),
-              Container(
-                width: 40,
-                height: 5,
-                decoration: BoxDecoration(
-                  color: Colors.grey.shade300,
-                  borderRadius: BorderRadius.circular(10),
+      builder: (ctx) {
+        bool isBusy = false;
+        return StatefulBuilder(builder: (context, setSheetState) {
+          return Container(
+            padding: const EdgeInsets.all(32),
+            decoration: const BoxDecoration(color: Colors.white, borderRadius: BorderRadius.vertical(top: Radius.circular(32))),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ClipRRect(borderRadius: BorderRadius.circular(24), child: Image.network(item['items_url'] ?? '', height: 160, width: 240, fit: BoxFit.cover)),
+                const SizedBox(height: 24),
+                Text(item['items_name'], style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
+                const SizedBox(height: 32),
+                if (isBusy) const CircularProgressIndicator(color: Colors.brown) else _buildRedeemButton(
+                  "REDEEM FOR ${item['items_cost']} COINS",
+                  Colors.black,
+                  Colors.white,
+                  _currentCoins >= item['items_cost'] ? () async {
+                    setSheetState(() => isBusy = true);
+                    await _updateCoinsDB(item['items_cost'], false);
+                    final code = await _createRedeemCode(item['items_id']);
+                    if (mounted) { Navigator.pop(ctx); if (code != null) _showResult(item['items_name'], code); }
+                  } : null
                 ),
-              ),
-              const Padding(
-                padding: EdgeInsets.all(20.0),
-                child: Text(
-                  'เลือกแพ็กเกจเติมเหรียญ',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.brown,
-                  ),
-                ),
-              ),
-              Expanded(
-                child: GridView.builder(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
-                  ),
-                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
-                    crossAxisCount: 2,
-                    childAspectRatio: 2.2,
-                    crossAxisSpacing: 12,
-                    mainAxisSpacing: 12,
-                  ),
-                  itemCount: _topUpPackages.length,
-                  itemBuilder: (context, index) {
-                    final pkg = _topUpPackages[index];
-                    return _buildPackageCard(pkg);
-                  },
-                ),
-              ),
-            ],
-          ),
-        );
+                const SizedBox(height: 16),
+              ],
+            ),
+          );
+        });
       },
     );
   }
 
-  Widget _buildPackageCard(Map<String, dynamic> pkg) {
-    return InkWell(
-      onTap: () {
-        Navigator.pop(context);
-        _processTopUp(pkg['coins']);
-      },
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          border: Border.all(color: Colors.blue.shade100, width: 1.5),
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.blue.withOpacity(0.05),
-              blurRadius: 4,
-              offset: const Offset(0, 2),
-            ),
-          ],
+  Widget _buildRedeemButton(String label, Color bg, Color text, VoidCallback? action) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: bg,
+          foregroundColor: text,
+          disabledBackgroundColor: Colors.grey.shade100,
+          elevation: 0,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+          padding: const EdgeInsets.symmetric(vertical: 18),
         ),
-        padding: const EdgeInsets.all(12),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Text(
-              '${pkg['coins']} Coins',
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-                color: Colors.black87,
-              ),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              '฿${pkg['price']}',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 14,
-                color: Colors.blue.shade600,
-              ),
-            ),
-          ],
-        ),
+        onPressed: action,
+        child: Text(label, style: const TextStyle(fontWeight: FontWeight.w900, fontSize: 13, letterSpacing: 1)),
       ),
     );
   }
