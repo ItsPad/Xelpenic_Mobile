@@ -44,15 +44,30 @@ class _HomeScreenState extends State<HomeScreen> {
     await _getUserProfile();
   }
 
+  // --- เพิ่มตัวแปรสำหรับเก็บข้อมูล Xelpass ใน _HomeScreenState ---
+  Map<String, dynamic>? _xelpassData;
+
   Future<void> _getUserProfile() async {
     final user = _supabase.auth.currentUser;
     if (user != null) {
       try {
+        // 1. ดึงข้อมูลโปรไฟล์พื้นฐาน
         final profileData = await _supabase
             .from('profiles')
             .select()
             .eq('customer_ID', user.id)
             .single();
+
+        // ใน _getUserProfile()
+        final xelData = await _supabase
+            .from('xelpass')
+            .select()
+            .eq('xel_user_id', user.id)
+            .gte(
+              'xel_exp',
+              DateTime.now().toIso8601String(),
+            ) // เช็คใบที่ยังไม่หมดอายุ
+            .maybeSingle(); // ถ้ามีมากกว่า 1 ระบบจะฟ้อง Error หรือถ้าไม่มีจะคืนค่า null
 
         final rankData = await _supabase
             .from('rank')
@@ -63,17 +78,19 @@ class _HomeScreenState extends State<HomeScreen> {
           setState(() {
             _user = user;
             _profileData = profileData;
+            _xelpassData = xelData; // เก็บข้อมูล Xelpass จริงลง State
             _rankThresholds = List<Map<String, dynamic>>.from(rankData);
           });
         }
       } catch (e) {
-        debugPrint('==== ❌ Error loading profile data ==== $e');
+        debugPrint('==== ❌ Error loading profile/xelpass data ==== $e');
       }
     } else {
       if (mounted) {
         setState(() {
           _user = null;
           _profileData = null;
+          _xelpassData = null;
         });
       }
     }
@@ -104,12 +121,22 @@ class _HomeScreenState extends State<HomeScreen> {
 
   // --- ส่วน Profile Banner ---
   Widget _buildProfileSection() {
-    // 1. กรณีที่ยังไม่ได้ล็อกอิน (โค้ดส่วนที่แพทส่งมา)
+    // 1. กรณีที่ยังไม่ได้ล็อกอิน
     if (_user == null) {
       return Container(
-        height: 250,
-        width: double.infinity,
-        decoration: const BoxDecoration(color: Color(0xFF4A2C2A)),
+        height: 220,
+        margin: const EdgeInsets.all(16),
+        decoration: BoxDecoration(
+          color: const Color(0xFF4A2C2A),
+          borderRadius: BorderRadius.circular(20),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.2),
+              blurRadius: 10,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
         child: Center(
           child: ElevatedButton(
             onPressed: () => Navigator.push(
@@ -119,14 +146,21 @@ class _HomeScreenState extends State<HomeScreen> {
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.white,
               foregroundColor: Colors.brown,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(12),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
             ),
-            child: const Text('เข้าสู่ระบบเพื่อดูโปรไฟล์'),
+            child: const Text(
+              'เข้าสู่ระบบเพื่อดูโปรไฟล์',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
           ),
         ),
       );
     }
 
-    // 2. กรณีที่ล็อกอินแล้ว เตรียมข้อมูลแสดงผล
+    // 2. เตรียมข้อมูลสำหรับกรณีล็อกอินแล้ว
     final String name = _profileData?['customer_username'] ?? 'ไม่ทราบชื่อ';
     final int points = _profileData?['customer_points'] ?? 0;
     final int userExp = _profileData?['customer_exp'] ?? 0;
@@ -139,145 +173,213 @@ class _HomeScreenState extends State<HomeScreen> {
     final String rankPic = currentRank['rank_pic_url'] ?? '';
 
     return Container(
-      height: 250,
-      width: double.infinity,
-      decoration: const BoxDecoration(
-        image: DecorationImage(
+      margin: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(25),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.3),
+            blurRadius: 15,
+            offset: const Offset(0, 8),
+          ),
+        ],
+        image: const DecorationImage(
           image: NetworkImage('https://i.ibb.co/B2ZvHFL3/article-full3x.jpg'),
           fit: BoxFit.cover,
-          colorFilter: ColorFilter.mode(Colors.black45, BlendMode.darken),
         ),
       ),
-      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 20),
-      child: Stack(
-        children: [
-          Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // --- 💡 จุดที่ครอบ GestureDetector เพื่อกดไปหน้า ProfileScreen ---
-              GestureDetector(
-                onTap: () {
+      child: Container(
+        // เลเยอร์สำหรับทำสีมืดทับรูปเพื่อให้ตัวหนังสือเด่น
+        decoration: BoxDecoration(
+          borderRadius: BorderRadius.circular(25),
+          gradient: LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [
+              Colors.black.withOpacity(0.7),
+              Colors.black.withOpacity(0.3),
+            ],
+          ),
+        ),
+        padding: const EdgeInsets.all(20),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                //Avatar สวยๆ พร้อมขอบขาว
+                Container(
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.white, width: 2),
+                  ),
+                  child: CircleAvatar(
+                    radius: 35,
+                    backgroundImage: NetworkImage(avatar),
+                  ),
+                ),
+                const SizedBox(width: 16),
+                // ข้อมูลชื่อและระดับ
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        name,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 20,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFDDAA55).withOpacity(0.8),
+                          borderRadius: BorderRadius.circular(5),
+                        ),
+                        child: const Text(
+                          'XEL PASS STUDENT',
+                          style: TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.w900,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                // ส่วนของ Rank (Badge)
+                Column(
+                  children: [
+                    rankPic.isNotEmpty
+                        ? Image.network(rankPic, height: 50)
+                        : const Icon(
+                            Icons.workspace_premium,
+                            color: Color(0xFFDDAA55),
+                            size: 40,
+                          ),
+                    Text(
+                      rankName.toUpperCase(),
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 10,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 25),
+            // ส่วนสรุป EXP และ คะแนน (จัดกลุ่มใน Glass Box)
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 16),
+              decoration: BoxDecoration(
+                color: Colors.white.withOpacity(0.15),
+                borderRadius: BorderRadius.circular(15),
+              ),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceAround,
+                children: [
+                  _buildStatItem(
+                    Icons.military_tech,
+                    'EXP',
+                    userExp.toString(),
+                  ),
+                  Container(width: 1, height: 30, color: Colors.white24),
+                  _buildStatItem(
+                    Icons.stars,
+                    'POINTS',
+                    points.toString(),
+                    valueColor: const Color(0xFFDDAA55),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 15),
+            // ปุ่มดูรายละเอียดโปรไฟล์
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () {
+                  // 💡 จุดที่อยู่ใน HomeScreen ตอนสั่งเปลี่ยนหน้า
                   Navigator.push(
                     context,
                     MaterialPageRoute(
                       builder: (context) => ProfileScreen(
                         profileData: _profileData,
                         currentRank: currentRank,
+                        xelpassData:
+                            _xelpassData, // ส่งข้อมูลที่ดึงมาจาก table xelpass ไปด้วย
                       ),
                     ),
                   );
                 },
-                child: Container(
-                  color: Colors
-                      .transparent, // ใส่ไว้เพื่อให้พื้นที่รอบๆ ตัวหนังสือกดติดง่ายขึ้น
-                  child: Row(
-                    children: [
-                      CircleAvatar(
-                        radius: 35,
-                        backgroundColor: Colors.white24,
-                        backgroundImage: NetworkImage(avatar),
+                style: TextButton.styleFrom(
+                  padding: EdgeInsets.zero,
+                  minimumSize: const Size(0, 30),
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                child: const Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      'VIEW PROFILE DETAILS',
+                      style: TextStyle(
+                        color: Colors.white60,
+                        fontSize: 11,
+                        letterSpacing: 1.2,
                       ),
-                      const SizedBox(width: 15),
-                      Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            name,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Text(
-                            'Xel Pass Student',
-                            style: TextStyle(
-                              color: Colors.white.withOpacity(0.8),
-                              fontSize: 13,
-                            ),
-                          ),
-                          const Text(
-                            'exp 31/1/2026',
-                            style: TextStyle(
-                              color: Colors.white60,
-                              fontSize: 11,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
+                    ),
+                    Icon(Icons.chevron_right, color: Colors.white60, size: 16),
+                  ],
                 ),
               ),
-
-              // --- จบส่วนที่กดได้ ---
-              const SizedBox(height: 30),
-              Row(
-                children: [
-                  const Icon(
-                    Icons.movie_filter_outlined,
-                    color: Colors.white,
-                    size: 18,
-                  ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'ค่าประสบการณ์ (EXP):  $userExp',
-                    style: const TextStyle(color: Colors.white, fontSize: 12),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 15),
-              Row(
-                children: [
-                  const Icon(Icons.stars, color: Color(0xFFDDAA55), size: 20),
-                  const SizedBox(width: 8),
-                  Text(
-                    'คะแนนสะสม  ',
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.8),
-                      fontSize: 12,
-                    ),
-                  ),
-                  Text(
-                    '$points คะแนน',
-                    style: const TextStyle(
-                      color: Color(0xFFDDAA55),
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-          // แสดงรูป Rank ที่มุมขวาบน
-          Positioned(
-            right: 0,
-            top: 60,
-            child: Column(
-              children: [
-                if (rankPic.isNotEmpty)
-                  Image.network(rankPic, height: 90)
-                else
-                  const Icon(
-                    Icons.workspace_premium,
-                    color: Colors.amber,
-                    size: 60,
-                  ),
-                const SizedBox(height: 4),
-                Text(
-                  'อันดับ: $rankName',
-                  style: const TextStyle(
-                    color: Colors.white,
-                    fontSize: 12,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
             ),
-          ),
-        ],
+          ],
+        ),
       ),
+    );
+  }
+
+  // Widget ตัวย่อยสำหรับสร้างช่อง EXP และ Points
+  Widget _buildStatItem(
+    IconData icon,
+    String label,
+    String value, {
+    Color valueColor = Colors.white,
+  }) {
+    return Column(
+      children: [
+        Row(
+          children: [
+            Icon(icon, size: 14, color: Colors.white60),
+            const SizedBox(width: 4),
+            Text(
+              label,
+              style: const TextStyle(
+                color: Colors.white60,
+                fontSize: 10,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        Text(
+          value,
+          style: TextStyle(
+            color: valueColor,
+            fontSize: 18,
+            fontWeight: FontWeight.w900,
+          ),
+        ),
+      ],
     );
   }
 
