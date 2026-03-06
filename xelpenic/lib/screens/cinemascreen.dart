@@ -4,6 +4,7 @@ import 'package:xelpenic/screens/notificationscreen.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:xelpenic/screens/cinema_branch_schedule_screen.dart';
 
 class CinemaScreen extends StatefulWidget {
   const CinemaScreen({super.key});
@@ -19,6 +20,67 @@ class _CinemaScreenState extends State<CinemaScreen> {
 
   List<Map<String, dynamic>> _cinemas = [];
   List<Map<String, dynamic>> _filteredCinemas = [];
+
+  List<Marker> _buildMapMarkers() {
+    List<Marker> markers = [];
+
+    /// USER LOCATION (เป็นหมุดแดง)
+    if (_currentPosition != null) {
+      markers.add(
+        Marker(
+          point: LatLng(
+            _currentPosition!.latitude,
+            _currentPosition!.longitude,
+          ),
+          width: 40,
+          height: 40,
+          child: const Icon(Icons.location_on, color: Colors.red, size: 35),
+        ),
+      );
+    }
+
+    /// CINEMA MARKERS (เป็นวงกลม X)
+    for (var cinema in _cinemas) {
+      if (cinema['latitude'] != null && cinema['longitude'] != null) {
+        markers.add(
+          Marker(
+            point: LatLng(cinema['latitude'], cinema['longitude']),
+            width: 40,
+            height: 40,
+            child: GestureDetector(
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => CinemaBranchScheduleScreen(cinema: cinema),
+                  ),
+                );
+              },
+              child: Container(
+                width: 40,
+                height: 40,
+                alignment: Alignment.center,
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: Color(0xFFCBAE82), width: 2),
+                ),
+                child: const Text(
+                  'X',
+                  style: TextStyle(
+                    color: Color(0xFFCBAE82),
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      }
+    }
+
+    return markers;
+  }
 
   String _searchText = '';
 
@@ -129,71 +191,6 @@ class _CinemaScreenState extends State<CinemaScreen> {
     });
   }
 
-  List<Marker> _buildMarkers() {
-    List<Marker> markers = [];
-
-    if (_currentPosition != null) {
-      markers.add(
-        Marker(
-          width: 40,
-          height: 40,
-          point: LatLng(
-            _currentPosition!.latitude,
-            _currentPosition!.longitude,
-          ),
-          child: const Icon(Icons.my_location, color: Colors.blue, size: 35),
-        ),
-      );
-    }
-
-    for (var cinema in _cinemas) {
-      if (cinema['latitude'] != null && cinema['longitude'] != null) {
-        markers.add(
-          Marker(
-            width: 40,
-            height: 40,
-            point: LatLng(cinema['latitude'], cinema['longitude']),
-            child: const Icon(Icons.location_on, color: Colors.red, size: 35),
-          ),
-        );
-      }
-    }
-
-    return markers;
-  }
-
-  Widget _buildMap() {
-    if (_currentPosition == null) {
-      return const SizedBox(
-        height: 200,
-        child: Center(child: CircularProgressIndicator()),
-      );
-    }
-
-    return Container(
-      height: 200,
-      decoration: BoxDecoration(borderRadius: BorderRadius.circular(12)),
-      child: ClipRRect(
-        borderRadius: BorderRadius.circular(12),
-        child: FlutterMap(
-          options: MapOptions(
-            initialCenter: LatLng(
-              _currentPosition!.latitude,
-              _currentPosition!.longitude,
-            ),
-            initialZoom: 13,
-          ),
-          children: [
-            TileLayer(
-              urlTemplate: "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-            ),
-            MarkerLayer(markers: _buildMarkers()),
-          ],
-        ),
-      ),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -239,17 +236,30 @@ class _CinemaScreenState extends State<CinemaScreen> {
                     _buildFilterTags(),
                     const SizedBox(height: 16),
 
-                    const Text(
-                      'แผนที่โรงหนัง',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
+                    /// MAP
+                    SizedBox(
+                      height: 220,
+                      child: FlutterMap(
+                        options: MapOptions(
+                          initialCenter: _currentPosition != null
+                              ? LatLng(
+                                  _currentPosition!.latitude,
+                                  _currentPosition!.longitude,
+                                )
+                              : const LatLng(13.736717, 100.523186),
+                          initialZoom: 12,
+                        ),
+                        children: [
+                          TileLayer(
+                            urlTemplate:
+                                'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                          ),
+
+                          /// MARKERS
+                          MarkerLayer(markers: _buildMapMarkers()),
+                        ],
                       ),
                     ),
-
-                    const SizedBox(height: 8),
-
-                    _buildMap(),
 
                     const SizedBox(height: 24),
 
@@ -399,58 +409,58 @@ class _CinemaScreenState extends State<CinemaScreen> {
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
-      child: Row(
-        children: [
-          Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              border: Border.all(color: Colors.grey.shade300),
-              borderRadius: BorderRadius.circular(8),
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => CinemaBranchScheduleScreen(cinema: cinema),
             ),
-            child: cinema['cm_image_url'] != null
-                ? Image.network(cinema['cm_image_url'], fit: BoxFit.cover)
-                : const Center(
-                    child: Text(
-                      'X',
-                      style: TextStyle(
-                        color: Colors.brown,
-                        fontSize: 20,
-                        fontWeight: FontWeight.bold,
-                      ),
+          );
+        },
+        borderRadius: BorderRadius.circular(10),
+        child: Row(
+          children: [
+            ClipRRect(
+              borderRadius: BorderRadius.circular(8),
+              child: Image.asset(
+                'assets/images/x_logo.png',
+                width: 40,
+                height: 40,
+                fit: BoxFit.cover,
+              ),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'XELPENIC ${cinema['cm_name']}',
+                    style: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 14,
                     ),
                   ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  'XELPENIC ${cinema['cm_name']}',
-                  style: const TextStyle(
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
+                  const SizedBox(height: 4),
+                  Text(
+                    '${distance.toStringAsFixed(2)} กม.',
+                    style: const TextStyle(color: Colors.grey, fontSize: 12),
                   ),
-                ),
-                const SizedBox(height: 4),
-                Text(
-                  '${distance.toStringAsFixed(2)} กม.',
-                  style: const TextStyle(color: Colors.grey, fontSize: 12),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-          IconButton(
-            icon: Icon(
-              _favoriteCinemas.contains(cinema['cm_id'])
-                  ? Icons.star
-                  : Icons.star_border,
-              color: Colors.brown,
+            IconButton(
+              icon: Icon(
+                _favoriteCinemas.contains(cinema['cm_id'])
+                    ? Icons.star
+                    : Icons.star_border,
+                color: Colors.brown,
+              ),
+              onPressed: () => _toggleFavorite(cinema['cm_id']),
             ),
-            onPressed: () => _toggleFavorite(cinema['cm_id']),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
