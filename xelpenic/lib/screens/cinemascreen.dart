@@ -683,6 +683,7 @@ class _CinemaMapScreenState extends State<CinemaMapScreen> {
             children: [
               TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
+                userAgentPackageName: 'com.example.xelpenic',
               ),
               MarkerLayer(markers: _buildMapMarkers()),
             ],
