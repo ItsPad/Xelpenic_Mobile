@@ -51,14 +51,14 @@ class _HomeScreenState extends State<HomeScreen> {
     final user = _supabase.auth.currentUser;
     if (user != null) {
       try {
-        // 1. ดึงข้อมูลโปรไฟล์พื้นฐาน
+        // 1. ดึงข้อมูล Profile ตามปกติ
         final profileData = await _supabase
             .from('profiles')
             .select()
             .eq('customer_ID', user.id)
             .single();
 
-        // ใน _getUserProfile()
+        // 2. ดึงข้อมูล Xelpass ที่ยังไม่หมดอายุล่าสุด
         final xelData = await _supabase
             .from('xelpass')
             .select()
@@ -67,7 +67,7 @@ class _HomeScreenState extends State<HomeScreen> {
               'xel_exp',
               DateTime.now().toIso8601String(),
             ) // เช็คใบที่ยังไม่หมดอายุ
-            .maybeSingle(); // ถ้ามีมากกว่า 1 ระบบจะฟ้อง Error หรือถ้าไม่มีจะคืนค่า null
+            .maybeSingle(); // ใช้ maybeSingle เพราะผู้ใช้อาจจะยังไม่มีบัตร
 
         final rankData = await _supabase
             .from('rank')
@@ -78,12 +78,12 @@ class _HomeScreenState extends State<HomeScreen> {
           setState(() {
             _user = user;
             _profileData = profileData;
-            _xelpassData = xelData; // เก็บข้อมูล Xelpass จริงลง State
+            _xelpassData = xelData; // 💡 เก็บข้อมูลลงตัวแปร
             _rankThresholds = List<Map<String, dynamic>>.from(rankData);
           });
         }
       } catch (e) {
-        debugPrint('==== ❌ Error loading profile/xelpass data ==== $e');
+        debugPrint('==== ❌ Error loading data ==== $e');
       }
     } else {
       if (mounted) {
@@ -171,6 +171,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final currentRank = _calculateCurrentRank(userExp);
     final String rankName = currentRank['rank_id'] ?? 'Bronze';
     final String rankPic = currentRank['rank_pic_url'] ?? '';
+    final String xelType = _xelpassData?['xel_type'] ?? 'NORMAL MEMBER';
 
     return Container(
       margin: const EdgeInsets.all(16),
@@ -238,12 +239,14 @@ class _HomeScreenState extends State<HomeScreen> {
                           vertical: 2,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFFDDAA55).withOpacity(0.8),
+                          color: _xelpassData != null
+                              ? const Color(0xFFDDAA55)
+                              : Colors.grey.withOpacity(0.5),
                           borderRadius: BorderRadius.circular(5),
                         ),
-                        child: const Text(
-                          'XEL PASS STUDENT',
-                          style: TextStyle(
+                        child: Text(
+                          xelType.toUpperCase(),
+                          style: const TextStyle(
                             color: Colors.white,
                             fontSize: 10,
                             fontWeight: FontWeight.w900,

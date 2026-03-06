@@ -67,58 +67,74 @@ class _CoinScreenState extends State<CoinScreen> {
     _itemsFuture = _supabase.from('items').select().lt('items_id', 900);
   }
 
+  // 💡 ปรับปรุงการดึงข้อมูล: ดึงค่าสดจาก Database เสมอ
   Future<void> _fetchUserProfile() async {
-    setState(() => _isLoadingProfile = true);
     try {
       final user = _supabase.auth.currentUser;
       if (user != null) {
-        // 1. ดึงข้อมูล Profile
-        final response = await _supabase
-            .from('profiles')
-            .select('customer_points, customer_avatar_url, customer_username')
-            .eq('customer_ID', user.id)
-            .single();
+        // ใช้ Future.wait เพื่อดึงข้อมูล Profile และ Xelpass พร้อมกัน ลด Latency
+        final List<dynamic> results = await Future.wait([
+          _supabase
+              .from('profiles')
+              .select()
+              .eq('customer_ID', user.id)
+              .single(),
+          _supabase
+              .from('xelpass')
+              .select()
+              .eq('xel_user_id', user.id)
+              .gte('xel_exp', DateTime.now().toIso8601String())
+              .maybeSingle(),
+        ]);
 
-        // 2. 💡 เพิ่มการดึงข้อมูล Xelpass ที่ยังไม่หมดอายุ (Active)
-        final xelData = await _supabase
-            .from('xelpass')
-            .select()
-            .eq('xel_user_id', user.id)
-            .gte(
-              'xel_exp',
-              DateTime.now().toIso8601String(),
-            ) // เช็คที่ยังไม่หมดอายุ
-            .maybeSingle(); // ดึงมาแค่ใบเดียว
+        final profileRes = results[0];
+        final xelData = results[1];
 
         if (mounted) {
           setState(() {
-            _currentCoins = response['customer_points'] ?? 0;
-            _profileImageUrl = response['customer_avatar_url'] ?? '';
-            _userName = response['customer_username'] ?? 'User';
-            _xelpassData = xelData; // 💡 เก็บค่าลงตัวแปร
+            _currentCoins = profileRes['customer_points'] ?? 0;
+            _profileImageUrl = profileRes['customer_avatar_url'] ?? '';
+            _userName = profileRes['customer_username'] ?? 'User';
+            _xelpassData = xelData;
             _isLoadingProfile = false;
           });
         }
       }
     } catch (e) {
+      debugPrint("Fetch Profile Error: $e");
       if (mounted) setState(() => _isLoadingProfile = false);
     }
   }
 
+  // 💡 ปรับปรุงลอจิกการอัปเดตเหรียญ: ป้องกันบั๊กเงินไม่ตรง
   Future<bool> _updateCoinsDB(int amount, bool isAddition) async {
     try {
       final userId = _supabase.auth.currentUser?.id;
       if (userId == null) return false;
-      final newTotal = isAddition
-          ? _currentCoins + amount
-          : _currentCoins - amount;
+
+      // 1. ดึงค่าล่าสุดจาก DB ก่อนคำนวณ (ป้องกัน Race Condition ในแอป)
+      final currentData = await _supabase
+          .from('profiles')
+          .select('customer_points')
+          .eq('customer_ID', userId)
+          .single();
+      int latestCoins = currentData['customer_points'] ?? 0;
+
+      // 2. คำนวณยอดใหม่
+      int newTotal = isAddition ? latestCoins + amount : latestCoins - amount;
+      if (newTotal < 0) return false; // ป้องกันเงินติดลบ
+
+      // 3. Update ลง Database
       await _supabase
           .from('profiles')
           .update({'customer_points': newTotal})
           .eq('customer_ID', userId);
-      if (mounted) setState(() => _currentCoins = newTotal);
+
+      // 4. สำคัญที่สุด: Refetch ข้อมูลใหม่ทั้งหมดจาก DB เพื่ออัปเดต UI ให้ตรงความจริง
+      await _fetchUserProfile();
       return true;
     } catch (e) {
+      debugPrint("Update Coins Error: $e");
       return false;
     }
   }
@@ -207,7 +223,6 @@ class _CoinScreenState extends State<CoinScreen> {
     );
   }
 
-  // --- เติมเงินแบบใหม่ สวยกว่าเดิม ---
   void _showTopUpSheet() {
     showModalBottomSheet(
       context: context,
@@ -266,7 +281,7 @@ class _CoinScreenState extends State<CoinScreen> {
                                 );
                                 if (mounted) {
                                   Navigator.pop(ctx);
-                                  if (ok)
+                                  if (ok) {
                                     ScaffoldMessenger.of(context).showSnackBar(
                                       SnackBar(
                                         content: Text(
@@ -275,6 +290,7 @@ class _CoinScreenState extends State<CoinScreen> {
                                         backgroundColor: Colors.green,
                                       ),
                                     );
+                                  }
                                 }
                               },
                               child: Container(
@@ -322,19 +338,250 @@ class _CoinScreenState extends State<CoinScreen> {
     );
   }
 
+  void _showXelpassSheet(Map<String, dynamic> pass) {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        bool isBusy = false;
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final bool hasActivePass = _xelpassData != null;
+
+            return Container(
+              padding: const EdgeInsets.all(32),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(
+                    Icons.workspace_premium,
+                    color: Color(0xFFDDAA55),
+                    size: 64,
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    pass['name'],
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  Text(
+                    pass['desc'],
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.grey),
+                  ),
+
+                  if (hasActivePass) ...[
+                    const SizedBox(height: 24),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.amber.shade50,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: Colors.amber.shade200),
+                      ),
+                      child: Text(
+                        "คุณมีแพ็กเกจ ${_xelpassData!['xel_type']} ใช้งานอยู่แล้ว",
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          color: Colors.amber.shade900,
+                          fontSize: 13,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ],
+
+                  const SizedBox(height: 32),
+                  if (isBusy)
+                    const CircularProgressIndicator(color: Colors.brown)
+                  else
+                    Column(
+                      children: [
+                        _buildRedeemButton(
+                          hasActivePass
+                              ? "ALREADY ACTIVE"
+                              : "REDEEM WITH ${pass['cost']} COINS",
+                          hasActivePass ? Colors.grey.shade300 : goldPrimary,
+                          hasActivePass ? Colors.grey.shade600 : Colors.black,
+                          (hasActivePass ||
+                                  _currentCoins < (pass['cost'] as int))
+                              ? null
+                              : () async {
+                                  setSheetState(() => isBusy = true);
+                                  final ok = await _updateCoinsDB(
+                                    pass['cost'],
+                                    false,
+                                  );
+                                  if (ok) {
+                                    final code = await _createRedeemCode(
+                                      pass['id'],
+                                    );
+                                    if (mounted) {
+                                      Navigator.pop(ctx);
+                                      if (code != null)
+                                        _showResult(pass['name'], code);
+                                    }
+                                  } else {
+                                    setSheetState(() => isBusy = false);
+                                  }
+                                },
+                        ),
+                        const SizedBox(height: 12),
+                        _buildRedeemButton(
+                          hasActivePass
+                              ? "ALREADY ACTIVE"
+                              : "BUY WITH CASH ฿${pass['price_thb']}",
+                          hasActivePass ? Colors.grey.shade100 : Colors.black,
+                          hasActivePass ? Colors.grey.shade400 : Colors.white,
+                          hasActivePass
+                              ? null
+                              : () async {
+                                  setSheetState(() => isBusy = true);
+                                  final code = await _createRedeemCode(
+                                    pass['id'],
+                                  );
+                                  await _fetchUserProfile();
+                                  if (mounted) {
+                                    Navigator.pop(ctx);
+                                    if (code != null)
+                                      _showResult(pass['name'], code);
+                                  }
+                                },
+                        ),
+                      ],
+                    ),
+                  const SizedBox(height: 16),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void _showItemSheet(Map<String, dynamic> item) {
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        bool isBusy = false;
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final int cost = item['items_cost'] ?? 0;
+            return Container(
+              padding: const EdgeInsets.all(32),
+              decoration: const BoxDecoration(
+                color: Colors.white,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(24),
+                    child: Image.network(
+                      item['items_url'] ?? '',
+                      height: 160,
+                      width: 240,
+                      fit: BoxFit.cover,
+                    ),
+                  ),
+                  const SizedBox(height: 24),
+                  Text(
+                    item['items_name'],
+                    style: const TextStyle(
+                      fontSize: 22,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 32),
+                  if (isBusy)
+                    const CircularProgressIndicator(color: Colors.brown)
+                  else
+                    _buildRedeemButton(
+                      "REDEEM FOR $cost COINS",
+                      Colors.black,
+                      Colors.white,
+                      _currentCoins < cost
+                          ? null
+                          : () async {
+                              setSheetState(() => isBusy = true);
+                              final ok = await _updateCoinsDB(cost, false);
+                              if (ok) {
+                                final code = await _createRedeemCode(
+                                  item['items_id'],
+                                );
+                                if (mounted) {
+                                  Navigator.pop(ctx);
+                                  if (code != null)
+                                    _showResult(item['items_name'], code);
+                                }
+                              } else {
+                                setSheetState(() => isBusy = false);
+                              }
+                            },
+                    ),
+                  const SizedBox(height: 16),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildRedeemButton(
+    String label,
+    Color bg,
+    Color text,
+    VoidCallback? action,
+  ) {
+    return SizedBox(
+      width: double.infinity,
+      child: ElevatedButton(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: bg,
+          foregroundColor: text,
+          disabledBackgroundColor: Colors.grey.shade100,
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          padding: const EdgeInsets.symmetric(vertical: 18),
+        ),
+        onPressed: action,
+        child: Text(
+          label,
+          style: const TextStyle(
+            fontWeight: FontWeight.w900,
+            fontSize: 13,
+            letterSpacing: 1,
+          ),
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: const Color(0xFFFDFDFD),
       body: CustomScrollView(
         slivers: [
-          // Custom App Bar
           SliverAppBar(
             expandedHeight: 220,
-            floating: false,
             pinned: true,
             backgroundColor: darkSecondary,
-            elevation: 0,
             flexibleSpace: FlexibleSpaceBar(
               background: Container(
                 decoration: BoxDecoration(
@@ -358,7 +605,6 @@ class _CoinScreenState extends State<CoinScreen> {
                           fontWeight: FontWeight.bold,
                         ),
                       ),
-                      const SizedBox(height: 8),
                       Row(
                         mainAxisAlignment: MainAxisAlignment.center,
                         children: [
@@ -399,7 +645,6 @@ class _CoinScreenState extends State<CoinScreen> {
                             horizontal: 24,
                             vertical: 12,
                           ),
-                          elevation: 0,
                         ),
                       ),
                     ],
@@ -408,7 +653,6 @@ class _CoinScreenState extends State<CoinScreen> {
               ),
             ),
           ),
-
           SliverToBoxAdapter(
             child: Container(
               padding: const EdgeInsets.symmetric(vertical: 32),
@@ -424,7 +668,7 @@ class _CoinScreenState extends State<CoinScreen> {
                   _buildXelpassList(),
                   const Padding(
                     padding: EdgeInsets.symmetric(horizontal: 24, vertical: 32),
-                    child: Divider(height: 1, thickness: 1),
+                    child: Divider(),
                   ),
                   _buildSectionTitle("EXCLUSIVE REWARDS"),
                   const SizedBox(height: 16),
@@ -466,7 +710,7 @@ class _CoinScreenState extends State<CoinScreen> {
             onTap: () => _showXelpassSheet(p),
             child: Container(
               width: 260,
-              margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+              margin: const EdgeInsets.symmetric(horizontal: 8),
               padding: const EdgeInsets.all(24),
               decoration: BoxDecoration(
                 color: darkSecondary,
@@ -482,33 +726,10 @@ class _CoinScreenState extends State<CoinScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Icon(
-                        Icons.workspace_premium,
-                        color: Color(0xFFDDAA55),
-                        size: 28,
-                      ),
-                      Container(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 10,
-                          vertical: 4,
-                        ),
-                        decoration: BoxDecoration(
-                          color: goldPrimary.withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Text(
-                          "${p['cost']} Coins",
-                          style: TextStyle(
-                            color: goldPrimary,
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                    ],
+                  const Icon(
+                    Icons.workspace_premium,
+                    color: Color(0xFFDDAA55),
+                    size: 28,
                   ),
                   const Spacer(),
                   Text(
@@ -519,15 +740,13 @@ class _CoinScreenState extends State<CoinScreen> {
                       fontSize: 18,
                     ),
                   ),
-                  const SizedBox(height: 4),
                   Text(
-                    p['desc'],
+                    "${p['cost']} Coins",
                     style: TextStyle(
-                      color: Colors.white.withOpacity(0.5),
-                      fontSize: 11,
+                      color: goldPrimary,
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
                     ),
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
                   ),
                 ],
               ),
@@ -569,7 +788,6 @@ class _CoinScreenState extends State<CoinScreen> {
                     BoxShadow(
                       color: Colors.black.withOpacity(0.02),
                       blurRadius: 10,
-                      offset: const Offset(0, 4),
                     ),
                   ],
                 ),
@@ -597,29 +815,15 @@ class _CoinScreenState extends State<CoinScreen> {
                             item['items_name'],
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 13,
-                            ),
+                            style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
-                          const SizedBox(height: 4),
-                          Row(
-                            children: [
-                              Icon(
-                                Icons.monetization_on,
-                                color: goldPrimary,
-                                size: 14,
-                              ),
-                              const SizedBox(width: 4),
-                              Text(
-                                "${item['items_cost']}",
-                                style: TextStyle(
-                                  color: goldPrimary,
-                                  fontWeight: FontWeight.w900,
-                                  fontSize: 12,
-                                ),
-                              ),
-                            ],
+                          Text(
+                            "${item['items_cost']} Coins",
+                            style: TextStyle(
+                              color: goldPrimary,
+                              fontWeight: FontWeight.w900,
+                              fontSize: 12,
+                            ),
                           ),
                         ],
                       ),
@@ -631,207 +835,6 @@ class _CoinScreenState extends State<CoinScreen> {
           },
         );
       },
-    );
-  }
-
-  // --- ฟังก์ชันแลกสิทธิ์ที่ปรับ UI ใหม่ ---
-  // 💡 ในฟังก์ชัน _showXelpassSheet
-  void _showXelpassSheet(Map<String, dynamic> pass) {
-    // 💡 1. ตรวจสอบสถานะ: ถ้า _xelpassData ไม่เป็น null แปลว่ามีสมาชิกที่ยังไม่หมดอายุอยู่
-    final bool hasActivePass = _xelpassData != null;
-
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        bool isBusy = false;
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return Container(
-              padding: const EdgeInsets.all(32),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  // ... ส่วนแสดงชื่อและคำอธิบาย (คงเดิม) ...
-                  const SizedBox(height: 32),
-                  if (isBusy)
-                    const CircularProgressIndicator(color: Colors.brown)
-                  else
-                    Column(
-                      children: [
-                        // 💡 2. ปรับปุ่มแลกด้วย Coins
-                        _buildRedeemButton(
-                          hasActivePass
-                              ? "ALREADY ACTIVE"
-                              : "REDEEM WITH ${pass['cost']} COINS",
-                          hasActivePass
-                              ? Colors.grey.shade300
-                              : const Color(0xFFDDAA55),
-                          hasActivePass ? Colors.grey.shade600 : Colors.black,
-                          // 💡 หัวใจสำคัญ: ถ้า hasActivePass เป็น true ให้ส่ง null เพื่อ disable ปุ่ม
-                          (hasActivePass || _currentCoins < pass['cost'])
-                              ? null
-                              : () async {
-                                  setSheetState(() => isBusy = true);
-                                  final ok = await _updateCoinsDB(
-                                    pass['cost'],
-                                    false,
-                                  );
-                                  if (ok) {
-                                    final code = await _createRedeemCode(
-                                      pass['id'],
-                                    );
-                                    // 💡 3. อัปเดตข้อมูล Profile ทันทีหลังแลกสำเร็จเพื่อให้ _xelpassData เปลี่ยนค่า
-                                    await _fetchUserProfile();
-                                    if (mounted) {
-                                      Navigator.pop(ctx);
-                                      if (code != null)
-                                        _showResult(pass['name'], code);
-                                    }
-                                  } else {
-                                    setSheetState(() => isBusy = false);
-                                  }
-                                },
-                        ),
-                        const SizedBox(height: 12),
-                        // 💡 4. ปรับปุ่มซื้อด้วยเงินสด
-                        _buildRedeemButton(
-                          hasActivePass
-                              ? "ALREADY ACTIVE"
-                              : "BUY WITH CASH ฿${pass['price_thb']}",
-                          hasActivePass ? Colors.grey.shade100 : Colors.black,
-                          hasActivePass ? Colors.grey.shade400 : Colors.white,
-                          // 💡 ส่ง null ถ้ามีสมาชิกอยู่แล้ว เพื่อไม่ให้กดได้
-                          hasActivePass
-                              ? null
-                              : () async {
-                                  setSheetState(() => isBusy = true);
-                                  final code = await _createRedeemCode(
-                                    pass['id'],
-                                  );
-                                  await _fetchUserProfile(); // 💡 อัปเดตสถานะสมาชิกใหม่
-                                  if (mounted) {
-                                    Navigator.pop(ctx);
-                                    if (code != null)
-                                      _showResult(pass['name'], code);
-                                  } else {
-                                    setSheetState(() => isBusy = false);
-                                  }
-                                },
-                        ),
-                      ],
-                    ),
-                  const SizedBox(height: 16),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  void _showItemSheet(Map<String, dynamic> item) {
-    showModalBottomSheet(
-      context: context,
-      backgroundColor: Colors.transparent,
-      builder: (ctx) {
-        bool isBusy = false;
-        return StatefulBuilder(
-          builder: (context, setSheetState) {
-            return Container(
-              padding: const EdgeInsets.all(32),
-              decoration: const BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.vertical(top: Radius.circular(32)),
-              ),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(24),
-                    child: Image.network(
-                      item['items_url'] ?? '',
-                      height: 160,
-                      width: 240,
-                      fit: BoxFit.cover,
-                    ),
-                  ),
-                  const SizedBox(height: 24),
-                  Text(
-                    item['items_name'],
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
-                    ),
-                  ),
-                  const SizedBox(height: 32),
-                  if (isBusy)
-                    const CircularProgressIndicator(color: Colors.brown)
-                  else
-                    _buildRedeemButton(
-                      "REDEEM FOR ${item['items_cost']} COINS",
-                      Colors.black,
-                      Colors.white,
-                      _currentCoins >= item['items_cost']
-                          ? () async {
-                              setSheetState(() => isBusy = true);
-                              await _updateCoinsDB(item['items_cost'], false);
-                              final code = await _createRedeemCode(
-                                item['items_id'],
-                              );
-                              if (mounted) {
-                                Navigator.pop(ctx);
-                                if (code != null)
-                                  _showResult(item['items_name'], code);
-                              }
-                            }
-                          : null,
-                    ),
-                  const SizedBox(height: 16),
-                ],
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildRedeemButton(
-    String label,
-    Color bg,
-    Color text,
-    VoidCallback? action,
-  ) {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: bg,
-          foregroundColor: text,
-          disabledBackgroundColor: Colors.grey.shade100,
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
-          padding: const EdgeInsets.symmetric(vertical: 18),
-        ),
-        onPressed: action,
-        child: Text(
-          label,
-          style: const TextStyle(
-            fontWeight: FontWeight.w900,
-            fontSize: 13,
-            letterSpacing: 1,
-          ),
-        ),
-      ),
     );
   }
 }

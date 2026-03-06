@@ -3,6 +3,7 @@ import 'edit_profile_screen.dart'; // เตรียมเชื่อมต่
 import 'booking_history_screen.dart'; // เตรียมเชื่อมต่อไฟล์
 import 'my_coupons_screen.dart'; // เตรียมเชื่อมต่อไฟล์
 import 'redeem_screen.dart'; // เตรียมเชื่อมต่อไฟล์
+import 'xelpass_card_screen.dart'; // เตรียมเชื่อมต่อไฟล์
 
 class MoreScreen extends StatelessWidget {
   final VoidCallback onLogout;
@@ -43,13 +44,7 @@ class MoreScreen extends StatelessWidget {
             context, 
             Icons.card_membership, 
             'XELPASS (ระบบสมาชิก)', 
-            () {
-              // TODO: สำหรับทำหน้าจัดการสมาชิกในอนาคต
-              ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-                content: const Text('เตรียมพบกับ XELPASS เร็วๆ นี้!'),
-                backgroundColor: goldColor,
-              ));
-            },
+            () => Navigator.push(context, MaterialPageRoute(builder: (context) => const XelpassCardScreen())),
           ),
           _buildMenuTile(
             context, 
