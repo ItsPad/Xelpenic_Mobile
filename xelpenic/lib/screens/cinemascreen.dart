@@ -23,10 +23,10 @@ class _CinemaScreenState extends State<CinemaScreen> {
   String _searchText = '';
   final Set<int> _favoriteCinemas = {};
   final Set<String> _selectedFilters = {};
-
   int _selectedTopTab = 0;
+  bool _isLoading = true;
 
-  final List<String> _filters = [
+  static const List<String> _filters = [
     'IMAX',
     'Dolby Vision+Atmos',
     '4DX',
@@ -42,139 +42,105 @@ class _CinemaScreenState extends State<CinemaScreen> {
   }
 
   Future<void> _init() async {
-  // รันทั้งคู่พร้อมกัน ใครเสร็จก่อนทำก่อน
-  Future.wait([
-    _getLocation(),
-    _fetchCinemas(),
-  ]);
-}
+    await Future.wait([_getLocation(), _fetchCinemas()]);
+  }
 
   Future<void> _getLocation() async {
-    final serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return;
-
-    var permission = await Geolocator.checkPermission();
-
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
+    try {
+      if (!await Geolocator.isLocationServiceEnabled()) return;
+      var permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+      if (permission == LocationPermission.deniedForever) return;
+      final position = await Geolocator.getCurrentPosition();
+      if (mounted) setState(() => _currentPosition = position);
+    } catch (e) {
+      debugPrint('Location error: $e');
     }
-
-    if (permission == LocationPermission.deniedForever) {
-      return;
-    }
-
-    final position = await Geolocator.getCurrentPosition();
-
-    setState(() {
-      _currentPosition = position;
-    });
   }
 
   Future<void> _fetchCinemas() async {
-    final data = await _supabase.from('cinema').select().order('cm_name');
-
-    _cinemas = List<Map<String, dynamic>>.from(data);
-
-    _sortByDistance();
-
-    setState(() {
-      _filteredCinemas = _cinemas;
-    });
+    try {
+      final data = await _supabase.from('cinema').select().order('cm_name');
+      if (mounted) {
+        setState(() {
+          _cinemas = List<Map<String, dynamic>>.from(data);
+          _sortByDistance();
+          _filteredCinemas = List.from(_cinemas);
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      debugPrint('Fetch cinemas error: $e');
+      if (mounted) setState(() => _isLoading = false);
+    }
   }
 
   void _sortByDistance() {
     if (_currentPosition == null) return;
-
-    _cinemas.sort((a, b) {
-      final distA = _calculateDistance(a);
-      final distB = _calculateDistance(b);
-      return distA.compareTo(distB);
-    });
+    _cinemas.sort(
+      (a, b) => _calculateDistance(a).compareTo(_calculateDistance(b)),
+    );
   }
 
   double _calculateDistance(Map<String, dynamic> cinema) {
     if (_currentPosition == null ||
         cinema['latitude'] == null ||
-        cinema['longitude'] == null) {
-      return 0;
-    }
-
+        cinema['longitude'] == null)
+      return double.maxFinite;
     return Geolocator.distanceBetween(
           _currentPosition!.latitude,
           _currentPosition!.longitude,
-          cinema['latitude'],
-          cinema['longitude'],
+          (cinema['latitude'] as num).toDouble(),
+          (cinema['longitude'] as num).toDouble(),
         ) /
         1000;
   }
 
-  List<String> _extractCinemaFormats(Map<String, dynamic> cinema) {
-    final dynamic rawFormats = cinema['formats'] ?? cinema['cm_formats'];
-    if (rawFormats is List) {
-      return rawFormats.map((item) => item.toString()).toList();
-    }
-    if (rawFormats is String) {
-      return rawFormats
-          .split(',')
-          .map((item) => item.trim())
-          .where((item) => item.isNotEmpty)
-          .toList();
-    }
-    return [];
-  }
-
   bool _matchesSelectedFormats(Map<String, dynamic> cinema) {
     if (_selectedFilters.isEmpty) return true;
-
-    final cinemaFormats = _extractCinemaFormats(cinema);
-
-    if (cinemaFormats.isEmpty) {
-      return true;
-    }
-
-    return cinemaFormats.any(_selectedFilters.contains);
-  }
-
-  void _searchCinema(String text) {
-    setState(() {
-      _searchText = text.toLowerCase();
-      _applyFilters();
-    });
-  }
-
-  void _toggleFavorite(int cinemaId) {
-    setState(() {
-      if (_favoriteCinemas.contains(cinemaId)) {
-        _favoriteCinemas.remove(cinemaId);
-      } else {
-        _favoriteCinemas.add(cinemaId);
-      }
-      _applyFilters();
-    });
-  }
-
-  void _toggleFormatFilter(String filter) {
-    setState(() {
-      if (_selectedFilters.contains(filter)) {
-        _selectedFilters.remove(filter);
-      } else {
-        _selectedFilters.add(filter);
-      }
-      _applyFilters();
-    });
+    final raw = cinema['formats'] ?? cinema['cm_formats'];
+    final List<String> formats = raw is List
+        ? raw.map((e) => e.toString()).toList()
+        : raw is String
+        ? raw
+              .split(',')
+              .map((e) => e.trim())
+              .where((e) => e.isNotEmpty)
+              .toList()
+        : [];
+    return formats.isEmpty || formats.any(_selectedFilters.contains);
   }
 
   void _applyFilters() {
     final source = _selectedTopTab == 1
         ? _cinemas.where((c) => _favoriteCinemas.contains(c['cm_id'])).toList()
         : _cinemas;
+    setState(() {
+      _filteredCinemas = source.where((cinema) {
+        final name = (cinema['cm_name'] ?? '').toString().toLowerCase();
+        return name.contains(_searchText) && _matchesSelectedFormats(cinema);
+      }).toList();
+    });
+  }
 
-    _filteredCinemas = source.where((cinema) {
-      final name = cinema['cm_name'].toString().toLowerCase();
-      final matchesSearch = name.contains(_searchText);
-      final matchesFormat = _matchesSelectedFormats(cinema);
-      return matchesSearch && matchesFormat;
-    }).toList();
+  void _toggleFavorite(int cinemaId) {
+    setState(() {
+      _favoriteCinemas.contains(cinemaId)
+          ? _favoriteCinemas.remove(cinemaId)
+          : _favoriteCinemas.add(cinemaId);
+    });
+    _applyFilters();
+  }
+
+  void _toggleFormatFilter(String filter) {
+    setState(() {
+      _selectedFilters.contains(filter)
+          ? _selectedFilters.remove(filter)
+          : _selectedFilters.add(filter);
+    });
+    _applyFilters();
   }
 
   void _openMap({Map<String, dynamic>? focusCinema}) {
@@ -214,21 +180,21 @@ class _CinemaScreenState extends State<CinemaScreen> {
         actions: [
           IconButton(
             icon: const Icon(Icons.mail_outline, color: Colors.brown),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => const NotificationScreen(),
-                ),
-              );
-            },
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (_) => const NotificationScreen()),
+            ),
           ),
         ],
       ),
-      body: _cinemas.isEmpty
+      body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : SingleChildScrollView(
-              child: Padding(
+          : _cinemas.isEmpty
+          ? const Center(child: Text('ไม่พบข้อมูลโรงภาพยนตร์'))
+          : RefreshIndicator(
+              onRefresh: _fetchCinemas,
+              child: SingleChildScrollView(
+                physics: const AlwaysScrollableScrollPhysics(),
                 padding: const EdgeInsets.all(16),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -250,13 +216,16 @@ class _CinemaScreenState extends State<CinemaScreen> {
                         ),
                       ),
                       const SizedBox(height: 8),
-                      if (nearbyCinemas.isEmpty)
-                        const Padding(
-                          padding: EdgeInsets.symmetric(vertical: 12),
-                          child: Text('ยังไม่มีสาขาใกล้เคียงในรายการนี้'),
-                        )
-                      else
-                        ...nearbyCinemas.map(_buildCinemaItem),
+                      nearbyCinemas.isEmpty
+                          ? const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 12),
+                              child: Text('ยังไม่มีสาขาใกล้เคียง'),
+                            )
+                          : Column(
+                              children: nearbyCinemas
+                                  .map(_buildCinemaItem)
+                                  .toList(),
+                            ),
                       const SizedBox(height: 12),
                       const Text(
                         'สาขาทั้งหมด',
@@ -274,18 +243,126 @@ class _CinemaScreenState extends State<CinemaScreen> {
                         ),
                       ),
                     const SizedBox(height: 8),
-                    if (_filteredCinemas.isEmpty)
-                      const Padding(
-                        padding: EdgeInsets.symmetric(vertical: 12),
-                        child: Text('ยังไม่มีสาขาที่ตรงกับเงื่อนไขที่เลือก'),
-                      )
-                    else
-                      ..._filteredCinemas.map(_buildCinemaItem),
+                    _filteredCinemas.isEmpty
+                        ? const Padding(
+                            padding: EdgeInsets.symmetric(vertical: 12),
+                            child: Text('ไม่พบสาขาที่ตรงกับเงื่อนไข'),
+                          )
+                        : Column(
+                            children: _filteredCinemas
+                                .map(_buildCinemaItem)
+                                .toList(),
+                          ),
                     const SizedBox(height: 80),
                   ],
                 ),
               ),
             ),
+    );
+  }
+
+  Widget _buildTopTabs() {
+    return Container(
+      height: 40,
+      decoration: BoxDecoration(
+        color: const Color(0xFFD4C1A0),
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: Row(
+        children: [
+          _buildTabButton('สาขาทั้งหมด', 0),
+          _buildTabButton('สาขาที่ชอบ', 1),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTabButton(String title, int index) {
+    final isSelected = _selectedTopTab == index;
+    return Expanded(
+      child: GestureDetector(
+        onTap: () {
+          setState(() => _selectedTopTab = index);
+          _applyFilters();
+        },
+        child: Container(
+          decoration: BoxDecoration(
+            color: isSelected ? const Color(0xFFCBAE82) : Colors.transparent,
+            borderRadius: BorderRadius.circular(8),
+          ),
+          alignment: Alignment.center,
+          child: Text(
+            title,
+            style: TextStyle(
+              color: isSelected ? Colors.white : Colors.black54,
+              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSearchBar() {
+    return Container(
+      height: 40,
+      decoration: BoxDecoration(
+        color: Colors.grey.shade200,
+        borderRadius: BorderRadius.circular(8),
+      ),
+      child: TextField(
+        onChanged: (text) {
+          _searchText = text.toLowerCase();
+          _applyFilters();
+        },
+        decoration: InputDecoration(
+          hintText: 'ค้นหา',
+          hintStyle: TextStyle(color: Colors.grey.shade600),
+          prefixIcon: const Icon(Icons.search, color: Colors.grey),
+          border: InputBorder.none,
+          contentPadding: const EdgeInsets.symmetric(vertical: 10),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterTags() {
+    return SizedBox(
+      height: 32,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: _filters.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 8),
+        itemBuilder: (_, index) {
+          final label = _filters[index];
+          final isSelected = _selectedFilters.contains(label);
+          return InkWell(
+            borderRadius: BorderRadius.circular(20),
+            onTap: () => _toggleFormatFilter(label),
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 180),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: isSelected ? const Color(0xFFCBAE82) : Colors.white,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: isSelected
+                      ? const Color(0xFFCBAE82)
+                      : Colors.brown.shade200,
+                ),
+              ),
+              child: Text(
+                label,
+                style: TextStyle(
+                  color: isSelected ? Colors.white : Colors.black87,
+                  fontSize: 12,
+                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
+                ),
+              ),
+            ),
+          );
+        },
+      ),
     );
   }
 
@@ -317,132 +394,20 @@ class _CinemaScreenState extends State<CinemaScreen> {
     );
   }
 
-  Widget _buildTopTabs() {
-    return Container(
-      height: 40,
-      decoration: BoxDecoration(
-        color: const Color(0xFFD4C1A0),
-        borderRadius: BorderRadius.circular(8),
-      ),
-      child: Row(
-        children: [
-          _buildTabButton('สาขาทั้งหมด', 0),
-          _buildTabButton('สาขาที่ชอบ', 1),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTabButton(String title, int index) {
-    final isSelected = _selectedTopTab == index;
-
-    return Expanded(
-      child: GestureDetector(
-        onTap: () {
-          setState(() {
-            _selectedTopTab = index;
-            _applyFilters();
-          });
-        },
-        child: Container(
-          decoration: BoxDecoration(
-            color: isSelected ? const Color(0xFFCBAE82) : Colors.transparent,
-            borderRadius: BorderRadius.circular(8),
-          ),
-          alignment: Alignment.center,
-          child: Text(
-            title,
-            style: TextStyle(
-              color: isSelected ? Colors.white : Colors.black54,
-              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildSearchBar() {
-    return Row(
-      children: [
-        Expanded(
-          child: Container(
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade200,
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: TextField(
-              onChanged: _searchCinema,
-              decoration: InputDecoration(
-                hintText: 'ค้นหา',
-                hintStyle: TextStyle(color: Colors.grey.shade600),
-                prefixIcon: const Icon(Icons.search, color: Colors.grey),
-                border: InputBorder.none,
-                contentPadding: const EdgeInsets.symmetric(vertical: 10),
-              ),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
-  Widget _buildFilterTags() {
-    return SizedBox(
-      height: 32,
-      child: ListView.separated(
-        scrollDirection: Axis.horizontal,
-        itemCount: _filters.length,
-        separatorBuilder: (_, __) => const SizedBox(width: 8),
-        itemBuilder: (_, index) {
-          final label = _filters[index];
-          final isSelected = _selectedFilters.contains(label);
-
-          return InkWell(
-            borderRadius: BorderRadius.circular(20),
-            onTap: () => _toggleFormatFilter(label),
-            child: AnimatedContainer(
-              duration: const Duration(milliseconds: 180),
-              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-              decoration: BoxDecoration(
-                color: isSelected ? const Color(0xFFCBAE82) : Colors.white,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(
-                  color: isSelected
-                      ? const Color(0xFFCBAE82)
-                      : Colors.brown.shade200,
-                ),
-              ),
-              child: Text(
-                label,
-                style: TextStyle(
-                  color: isSelected ? Colors.white : Colors.black87,
-                  fontSize: 12,
-                  fontWeight: isSelected ? FontWeight.w700 : FontWeight.w400,
-                ),
-              ),
-            ),
-          );
-        },
-      ),
-    );
-  }
-
   Widget _buildCinemaItem(Map<String, dynamic> cinema) {
     final distance = _calculateDistance(cinema);
+    final cinemaId = cinema['cm_id'] as int?;
+    final isFav = cinemaId != null && _favoriteCinemas.contains(cinemaId);
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 16),
       child: InkWell(
-        onTap: () {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => CinemaBranchScheduleScreen(cinema: cinema),
-            ),
-          );
-        },
+        onTap: () => Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => CinemaBranchScheduleScreen(cinema: cinema),
+          ),
+        ),
         borderRadius: BorderRadius.circular(10),
         child: Row(
           children: [
@@ -469,7 +434,9 @@ class _CinemaScreenState extends State<CinemaScreen> {
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    '${distance.toStringAsFixed(2)} กม.',
+                    distance == double.maxFinite
+                        ? 'ไม่ทราบระยะทาง'
+                        : '${distance.toStringAsFixed(2)} กม.',
                     style: const TextStyle(color: Colors.grey, fontSize: 12),
                   ),
                 ],
@@ -481,12 +448,12 @@ class _CinemaScreenState extends State<CinemaScreen> {
             ),
             IconButton(
               icon: Icon(
-                _favoriteCinemas.contains(cinema['cm_id'])
-                    ? Icons.star
-                    : Icons.star_border,
+                isFav ? Icons.star : Icons.star_border,
                 color: Colors.brown,
               ),
-              onPressed: () => _toggleFavorite(cinema['cm_id']),
+              onPressed: cinemaId != null
+                  ? () => _toggleFavorite(cinemaId)
+                  : null,
             ),
           ],
         ),
@@ -494,6 +461,10 @@ class _CinemaScreenState extends State<CinemaScreen> {
     );
   }
 }
+
+// ═══════════════════════════════════════════════
+//                  MAP SCREEN
+// ═══════════════════════════════════════════════
 
 class CinemaMapScreen extends StatefulWidget {
   const CinemaMapScreen({
@@ -514,36 +485,28 @@ class CinemaMapScreen extends StatefulWidget {
 class _CinemaMapScreenState extends State<CinemaMapScreen> {
   final MapController _mapController = MapController();
   final TextEditingController _searchController = TextEditingController();
+
   int? _selectedCinemaId;
   String _query = '';
+  List<Marker> _cachedMarkers = [];
 
-  String _normalizeText(dynamic value) {
-    return value?.toString().toLowerCase().trim() ?? '';
+  @override
+  void initState() {
+    super.initState();
+    _selectedCinemaId = widget.focusCinema?['cm_id'] as int?;
+    _rebuildMarkers();
   }
 
-  List<Map<String, dynamic>> get _searchMatches {
-    if (_query.trim().isEmpty) return widget.cinemas;
-
-    final query = _query.toLowerCase().trim();
-    return widget.cinemas.where((cinema) {
-      final name = _normalizeText(cinema['cm_name']);
-      final mapInfo = _normalizeText(cinema['cm_map_url']);
-      return name.contains(query) || mapInfo.contains(query);
-    }).toList();
+  @override
+  void dispose() {
+    _searchController.dispose();
+    _mapController.dispose();
+    super.dispose();
   }
 
-  List<Map<String, dynamic>> get _visibleCinemas {
-    return _searchMatches;
-  }
-
-  Map<String, dynamic>? get _selectedCinema {
-    if (_selectedCinemaId == null) return null;
-    for (final cinema in widget.cinemas) {
-      if (cinema['cm_id'] == _selectedCinemaId) {
-        return cinema;
-      }
-    }
-    return null;
+  // cache markers — rebuild เฉพาะเมื่อข้อมูลเปลี่ยน
+  void _rebuildMarkers() {
+    _cachedMarkers = _buildMapMarkers();
   }
 
   LatLng get _defaultCenter {
@@ -551,7 +514,10 @@ class _CinemaMapScreenState extends State<CinemaMapScreen> {
     if (focus != null &&
         focus['latitude'] != null &&
         focus['longitude'] != null) {
-      return LatLng(focus['latitude'], focus['longitude']);
+      return LatLng(
+        (focus['latitude'] as num).toDouble(),
+        (focus['longitude'] as num).toDouble(),
+      );
     }
     if (widget.currentPosition != null) {
       return LatLng(
@@ -562,113 +528,113 @@ class _CinemaMapScreenState extends State<CinemaMapScreen> {
     return const LatLng(13.736717, 100.523186);
   }
 
-  @override
-  void initState() {
-    super.initState();
-    _selectedCinemaId = widget.focusCinema?['cm_id'] as int?;
+  List<Map<String, dynamic>> get _searchResults {
+    if (_query.trim().isEmpty) return widget.cinemas;
+    final q = _query.toLowerCase().trim();
+    return widget.cinemas.where((c) {
+      final name = (c['cm_name'] ?? '').toString().toLowerCase();
+      final addr = (c['cm_map_url'] ?? '').toString().toLowerCase();
+      return name.contains(q) || addr.contains(q);
+    }).toList();
   }
 
-  @override
-  void dispose() {
-    _searchController.dispose();
-    super.dispose();
+  Map<String, dynamic>? get _selectedCinema {
+    if (_selectedCinemaId == null) return null;
+    try {
+      return widget.cinemas.firstWhere((c) => c['cm_id'] == _selectedCinemaId);
+    } catch (_) {
+      return null;
+    }
   }
 
   void _moveToCinema(Map<String, dynamic> cinema) {
     if (cinema['latitude'] == null || cinema['longitude'] == null) return;
-
-    _mapController.move(LatLng(cinema['latitude'], cinema['longitude']), 15);
-
+    _mapController.move(
+      LatLng(
+        (cinema['latitude'] as num).toDouble(),
+        (cinema['longitude'] as num).toDouble(),
+      ),
+      15,
+    );
     setState(() {
       _selectedCinemaId = cinema['cm_id'] as int?;
+      _rebuildMarkers();
     });
   }
 
-  void _onMapSearchChanged(String value) {
-    setState(() {
-      _query = value;
-    });
-
-    final matches = _searchMatches;
-    if (value.trim().isNotEmpty && matches.length == 1) {
-      _moveToCinema(matches.first);
-    }
-  }
-
-  void _submitMapSearch() {
-    final matches = _searchMatches;
-    if (matches.isNotEmpty) {
-      _moveToCinema(matches.first);
+  void _onSearchChanged(String value) {
+    setState(() => _query = value);
+    final results = _searchResults;
+    if (value.trim().isNotEmpty && results.length == 1) {
+      _moveToCinema(results.first);
     }
   }
 
   void _openCinemaListSheet() {
+    final cinemas = _searchResults;
     showModalBottomSheet<void>(
       context: context,
       backgroundColor: const Color(0xFF1E1E1E),
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(18)),
       ),
-      builder: (context) {
-        final cinemas = _visibleCinemas;
-        return SafeArea(
-          top: false,
-          child: SizedBox(
-            height: 300,
-            child: Column(
-              children: [
-                const SizedBox(height: 10),
-                Container(
-                  width: 42,
-                  height: 4,
-                  decoration: BoxDecoration(
-                    color: Colors.white24,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+      builder: (ctx) => SafeArea(
+        top: false,
+        child: SizedBox(
+          height: 300,
+          child: Column(
+            children: [
+              const SizedBox(height: 10),
+              Container(
+                width: 42,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.white24,
+                  borderRadius: BorderRadius.circular(10),
                 ),
-                const SizedBox(height: 14),
-                const Text(
-                  'รายการโรงภาพยนตร์',
-                  style: TextStyle(
-                    color: Colors.white,
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                  ),
+              ),
+              const SizedBox(height: 14),
+              const Text(
+                'รายการโรงภาพยนตร์',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: 16,
+                  fontWeight: FontWeight.bold,
                 ),
-                const SizedBox(height: 8),
-                Expanded(
-                  child: ListView.builder(
-                    itemCount: cinemas.length,
-                    itemBuilder: (_, index) {
-                      final cinema = cinemas[index];
-                      return ListTile(
-                        leading: const Icon(
-                          Icons.location_on,
-                          color: Colors.amber,
-                        ),
-                        title: Text(
-                          cinema['cm_name']?.toString() ?? '-',
-                          style: const TextStyle(color: Colors.white),
-                        ),
-                        subtitle: Text(
-                          cinema['cm_map_url']?.toString() ?? '',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: const TextStyle(color: Colors.white70),
-                        ),
-                        onTap: () {
-                          Navigator.pop(context);
-                          _moveToCinema(cinema);
-                        },
-                      );
-                    },
-                  ),
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: ListView.builder(
+                  itemCount: cinemas.length,
+                  itemBuilder: (_, i) {
+                    final cinema = cinemas[i];
+                    return ListTile(
+                      leading: const Icon(
+                        Icons.location_on,
+                        color: Colors.amber,
+                      ),
+                      title: Text(
+                        cinema['cm_name']?.toString() ?? '-',
+                        style: const TextStyle(color: Colors.white),
+                      ),
+                      subtitle: Text(
+                        cinema['cm_map_url']?.toString() ?? '',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(color: Colors.white70),
+                      ),
+                      onTap: () {
+                        Navigator.pop(ctx);
+                        _moveToCinema(cinema);
+                      },
+                    );
+                  },
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -688,7 +654,7 @@ class _CinemaMapScreenState extends State<CinemaMapScreen> {
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
                 userAgentPackageName: 'com.xel.xelpenic',
               ),
-              MarkerLayer(markers: _buildMapMarkers()),
+              MarkerLayer(markers: _cachedMarkers),
             ],
           ),
           SafeArea(
@@ -722,8 +688,13 @@ class _CinemaMapScreenState extends State<CinemaMapScreen> {
                           child: TextField(
                             controller: _searchController,
                             style: const TextStyle(color: Colors.white),
-                            onChanged: _onMapSearchChanged,
-                            onSubmitted: (_) => _submitMapSearch(),
+                            onChanged: _onSearchChanged,
+                            onSubmitted: (_) {
+                              final results = _searchResults;
+                              if (results.isNotEmpty) {
+                                _moveToCinema(results.first);
+                              }
+                            },
                             decoration: InputDecoration(
                               hintText: 'ค้นหาโรงภาพยนตร์',
                               hintStyle: const TextStyle(color: Colors.white70),
@@ -736,7 +707,7 @@ class _CinemaMapScreenState extends State<CinemaMapScreen> {
                                   : IconButton(
                                       onPressed: () {
                                         _searchController.clear();
-                                        _onMapSearchChanged('');
+                                        _onSearchChanged('');
                                       },
                                       icon: Container(
                                         width: 20,
@@ -774,7 +745,7 @@ class _CinemaMapScreenState extends State<CinemaMapScreen> {
                 FloatingActionButton(
                   heroTag: 'my-location-btn',
                   mini: true,
-                  backgroundColor: const Color.fromARGB(255, 206, 181, 106),
+                  backgroundColor: const Color(0xFFCEB56A),
                   onPressed: () {
                     if (widget.currentPosition == null) return;
                     _mapController.move(
@@ -790,7 +761,7 @@ class _CinemaMapScreenState extends State<CinemaMapScreen> {
                 const SizedBox(height: 10),
                 FloatingActionButton.extended(
                   heroTag: 'cinema-list-btn',
-                  backgroundColor: const Color.fromARGB(255, 206, 179, 99),
+                  backgroundColor: const Color(0xFFCEB36A),
                   onPressed: _openCinemaListSheet,
                   icon: const Icon(Icons.list, color: Colors.black),
                   label: const Text(
@@ -810,8 +781,7 @@ class _CinemaMapScreenState extends State<CinemaMapScreen> {
   }
 
   Widget _buildSelectedCinemaCard(Map<String, dynamic> cinema) {
-    final address = cinema['cm_map_url']?.toString().trim();
-
+    final address = (cinema['cm_map_url'] ?? '').toString().trim();
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(14),
@@ -832,9 +802,7 @@ class _CinemaMapScreenState extends State<CinemaMapScreen> {
           ),
           const SizedBox(height: 6),
           Text(
-            (address == null || address.isEmpty)
-                ? 'ไม่มีข้อมูลตำแหน่งที่ตั้ง'
-                : address,
+            address.isEmpty ? 'ไม่มีข้อมูลตำแหน่งที่ตั้ง' : address,
             style: const TextStyle(color: Colors.white70),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
@@ -845,14 +813,12 @@ class _CinemaMapScreenState extends State<CinemaMapScreen> {
               side: const BorderSide(color: Colors.amber),
               foregroundColor: Colors.amber,
             ),
-            onPressed: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => CinemaBranchScheduleScreen(cinema: cinema),
-                ),
-              );
-            },
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => CinemaBranchScheduleScreen(cinema: cinema),
+              ),
+            ),
             icon: const Icon(Icons.local_movies_outlined),
             label: const Text('ดูโรงภาพยนตร์'),
           ),
@@ -878,30 +844,30 @@ class _CinemaMapScreenState extends State<CinemaMapScreen> {
       );
     }
 
-    for (final cinema in _visibleCinemas) {
-      if (cinema['latitude'] == null || cinema['longitude'] == null) {
-        continue;
-      }
-
+    for (final cinema in _searchResults) {
+      if (cinema['latitude'] == null || cinema['longitude'] == null) continue;
       final cinemaId = cinema['cm_id'] as int?;
-      final selected = cinemaId != null && cinemaId == _selectedCinemaId;
+      final isSelected = cinemaId != null && cinemaId == _selectedCinemaId;
 
       markers.add(
         Marker(
           width: 42,
           height: 42,
-          point: LatLng(cinema['latitude'], cinema['longitude']),
+          point: LatLng(
+            (cinema['latitude'] as num).toDouble(),
+            (cinema['longitude'] as num).toDouble(),
+          ),
           child: GestureDetector(
             onTap: () => _moveToCinema(cinema),
             child: Container(
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
-                color: selected
+                color: isSelected
                     ? const Color(0xFFD44A4A)
                     : const Color(0xFFB88352),
                 border: Border.all(
                   color: Colors.white,
-                  width: selected ? 2.5 : 2,
+                  width: isSelected ? 2.5 : 2,
                 ),
                 boxShadow: const [
                   BoxShadow(
