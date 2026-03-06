@@ -42,9 +42,12 @@ class _CinemaScreenState extends State<CinemaScreen> {
   }
 
   Future<void> _init() async {
-    await _getLocation();
-    await _fetchCinemas();
-  }
+  // รันทั้งคู่พร้อมกัน ใครเสร็จก่อนทำก่อน
+  Future.wait([
+    _getLocation(),
+    _fetchCinemas(),
+  ]);
+}
 
   Future<void> _getLocation() async {
     final serviceEnabled = await Geolocator.isLocationServiceEnabled();
@@ -683,7 +686,7 @@ class _CinemaMapScreenState extends State<CinemaMapScreen> {
             children: [
               TileLayer(
                 urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.xelpenic',
+                userAgentPackageName: 'com.xel.xelpenic',
               ),
               MarkerLayer(markers: _buildMapMarkers()),
             ],
