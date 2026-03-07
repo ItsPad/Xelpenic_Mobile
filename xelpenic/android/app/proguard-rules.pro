@@ -1,0 +1,8 @@
+-keep class io.flutter.app.** { *; }
+-keep class io.flutter.plugin.** { *; }
+-keep class io.supabase.** { *; }
+-keep class io.github.jan.supabase.** { *; }
+-keep class com.google.gson.** { *; }
+-keepattributes Signature
+-keepattributes *Annotation*
+-dontwarn io.supabase.**
