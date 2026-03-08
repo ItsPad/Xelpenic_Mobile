@@ -1,24 +1,42 @@
-# 🎬 XELPENIC - Movie Theater Application
+# 🎬 XELPENIC - Internal Developer Documentation
 
-XELPENIC เป็นแอปพลิเคชันจองตั๋วภาพยนตร์และระบบสมาชิก ที่ออกแบบมาเพื่อค้นหาโรงภาพยนตร์ใกล้เคียง จองตั๋ว และใช้ระบบคะแนนสะสม (Points Redemption)
-
-## 🛠 Tech Stack
-* **Frontend:** Flutter (Dart)
-* **Backend & Database:** Supabase (PostgreSQL)
-* **Authentication:** Supabase Auth (Email/Password)
-* **Maps & Location:** `flutter_map`, `geolocator`
+**XELPENIC** คือแอปพลิเคชันจัดการโรงภาพยนตร์แบบครบวงจร (Comprehensive Movie Theater Application) ที่ออกแบบมาเพื่อยกระดับประสบการณ์ของผู้ใช้งาน ตั้งแต่การค้นหาสาขาใกล้เคียง, การตรวจสอบรอบฉาย, การซื้อตั๋วภาพยนตร์, ไปจนถึงระบบสมาชิกและการแลกคะแนนสะสม (Points Redemption)
 
 ---
 
-## 🚀 Getting Started (การติดตั้งและรันโปรเจกต์)
+## 📑 Table of Contents (สารบัญ)
+1. [Tech Stack & Architecture](#1-tech-stack--architecture)
+2. [Prerequisites & Installation](#2-prerequisites--installation)
+3. [Project Directory Structure](#3-project-directory-structure)
+4. [Database Schema & Data Dictionary](#4-database-schema--data-dictionary)
+5. [Security & Row Level Security (RLS)](#5-security--row-level-security-rls)
+6. [Build & Release Guide](#6-build--release-guide)
+7. [Testing Strategy (SDLC)](#7-testing-strategy-sdlc)
+8. [Troubleshooting & Known Issues](#8-troubleshooting--known-issues)
 
-### Prerequisites
-1. ติดตั้ง Flutter SDK (เวอร์ชันล่าสุด)
-2. ติดตั้ง VS Code หรือ Android Studio
-3. โปรเจกต์นี้ใช้ระบบพิกัด GPS รันบน Emulator อาจต้องมีการตั้งค่า Location จำลอง
+---
 
-### Installation
-1. Clone โปรเจกต์ลงมาที่เครื่อง
-2. รันคำสั่งเพื่อติดตั้ง Dependencies:
+## 🛠 1. Tech Stack & Architecture
+* **Frontend Framework:** Flutter (Dart)
+* **Backend Platform:** Supabase (BaaS)
+* **Database:** PostgreSQL (via Supabase)
+* **Authentication:** Supabase Auth (Email / Password)
+* **Key Packages (Dependencies):**
+  * `supabase_flutter`: เชื่อมต่อระบบ Backend และ Auth
+  * `geolocator`: ตรวจจับพิกัด GPS ปัจจุบันของผู้ใช้งาน
+  * `flutter_map` & `latlong2`: แสดงผลแผนที่ OpenStreetMap แบบ Custom Marker
+
+---
+
+## 🚀 2. Prerequisites & Installation
+
+### System Requirements
+* Flutter SDK (Latest Stable Version)
+* Android Studio (สำหรับ Emulator) หรือ Physical Android Device (Android 7.0+)
+* VS Code พร้อมติดตั้ง Extension: Flutter, Dart
+
+### Setup Steps
+1. **Clone the repository:**
    ```bash
-   flutter pub get
+   git clone <repository_url>
+   cd xelpenic
